@@ -1,6 +1,7 @@
 import sys, os, shlex
 import contextlib
 import torch
+import torch_directml
 from modules import errors
 from packaging import version
 
@@ -41,6 +42,9 @@ def get_optimal_device():
     if has_mps():
         return torch.device("mps")
 
+    if torch_directml.is_available():
+        return torch_directml.device(torch_directml.default_device())
+    
     return cpu
 
 
