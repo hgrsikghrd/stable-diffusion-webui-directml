@@ -125,12 +125,15 @@ def git_clone(url, dir, name, commithash=None):
 def version_check(commit):
     try:
         import requests
-        commits = requests.get('https://api.github.com/repos/AUTOMATIC1111/stable-diffusion-webui/branches/master').json()
+        commits = requests.get('https://api.github.com/repos/hgrsikghrd/stable-diffusion-webui-directml/branches/master').json()
         if commit != "<none>" and commits['commit']['sha'] != commit:
             print("--------------------------------------------------------")
             print("| You are not up to date with the most recent release. |")
             print("| Consider running `git pull` to update.               |")
             print("--------------------------------------------------------")
+            print("최신 커밋이 아닙니다.")
+            print("파워쉘 간단 설치: webui-directml-update.ps1 실행")
+            print("직접 설치: `git pull` 후 `git submodule update`")
         elif commits['commit']['sha'] == commit:
             print("You are up to date with the most recent release.")
         else:
@@ -234,7 +237,7 @@ def prepare_environment():
                 run_pip(f"install -U -I --no-deps {xformers_windows_package}", "xformers")
             else:
                 print("Installation of xformers is not supported in this version of Python.")
-                print("You can also check this and build manually: https://github.com/hgrsikghrd/stable-diffusion-webui/wiki/Xformers#building-xformers-on-windows-by-duckness")
+                print("You can also check this and build manually: https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Xformers#building-xformers-on-windows-by-duckness")
                 if not is_installed("xformers"):
                     exit(0)
         elif platform.system() == "Linux":
