@@ -21,9 +21,9 @@ def lora_Linear_forward(self, x):
         self.weight = torch.nn.Parameter(self.weight.float())
         if self.bias is not None and self.bias.dtype == torch.float16:
             self.bias = torch.nn.Parameter(self.bias.float())
-        return lora.lora_Linear_forward(x.float()).type(x.dtype)
+        return lora.lora_Linear_forward(self, x.float()).type(x.dtype)
     else:
-        return lora.lora_Linear_forward(x)
+        return lora.lora_Linear_forward(self, x)
 
 
 def lora_Conv2d_forward(self, x):
@@ -31,9 +31,9 @@ def lora_Conv2d_forward(self, x):
         self.weight = torch.nn.Parameter(self.weight.float())
         if self.bias is not None and self.bias.dtype == torch.float16:
             self.bias = torch.nn.Parameter(self.bias.float())
-        return lora.lora_Conv2d_forward(x.float()).type(x.dtype)
+        return lora.lora_Conv2d_forward(self, x.float()).type(x.dtype)
     else:
-        return lora.lora_Conv2d_forward(x)
+        return lora.lora_Conv2d_forward(self, x)
 
 
 if not hasattr(torch.nn, 'Linear_forward_before_lora'):
