@@ -4,6 +4,7 @@ import traceback
 import psutil
 
 import torch
+import torch_directml
 from torch import einsum
 
 from ldm.util import default
@@ -33,6 +34,10 @@ def get_available_vram():
         mem_free_torch = mem_reserved - mem_active
         mem_free_total = mem_free_cuda + mem_free_torch
         return mem_free_total
+    elif shared.device.type == 'privateuseone' and shared.cmd_opts.vram is not None:
+        mem_active = sum(torch_directml.gpu_memory(shared.device.index))
+        mem_total = shared.cmd_opts.vram * (1 << 10)
+        return (mem_total - mem_active) * (1 << 20)
     else:
         return psutil.virtual_memory().available
 
@@ -184,6 +189,11 @@ def einsum_op_cuda(q, k, v):
     # Divide factor of safety as there's copying and fragmentation
     return einsum_op_tensor_mem(q, k, v, mem_free_total / 3.3 / (1 << 20))
 
+def einsum_op_dml(q, k, v):
+    mem_active = sum(torch_directml.gpu_memory())
+    mem_reserved = shared.cmd_opts.vram * (1 << 10) * 0.7 # assume allocated memory
+    return einsum_op_tensor_mem(q, k, v, mem_reserved - mem_active if mem_reserved > mem_active else 0)
+
 def einsum_op(q, k, v):
     if q.device.type == 'cuda':
         return einsum_op_cuda(q, k, v)
@@ -192,6 +202,9 @@ def einsum_op(q, k, v):
         if mem_total_gb >= 32 and q.shape[0] % 32 != 0 and q.shape[0] * q.shape[1] < 2**18:
             return einsum_op_mps_v1(q, k, v)
         return einsum_op_mps_v2(q, k, v)
+
+    if q.device.type == 'privateuseone' and shared.cmd_opts.vram is not None:
+        return einsum_op_dml(q, k, v)
 
     # Smaller slices are faster due to L2/L3/SLC caches.
     # Tested on i7 with 8MB L3 cache.
