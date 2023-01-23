@@ -8,7 +8,7 @@ from basicsr.utils.download_util import load_file_from_url
 from realesrgan import RealESRGANer
 
 from modules.upscaler import Upscaler, UpscalerData
-from modules.shared import cmd_opts, opts
+from modules.shared import cmd_opts, opts, device
 
 
 class UpscalerRealESRGAN(Upscaler):
@@ -49,6 +49,7 @@ class UpscalerRealESRGAN(Upscaler):
             half=not cmd_opts.no_half,
             tile=opts.ESRGAN_tile,
             tile_pad=opts.ESRGAN_tile_overlap,
+            device=device,
         )
 
         upsampled = upsampler.enhance(np.array(img), outscale=info.scale)[0]
