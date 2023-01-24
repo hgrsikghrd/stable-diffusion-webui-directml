@@ -51,7 +51,9 @@ def realesrgan_tile_process_fix(self):
             # upscale tile
             try:
                 with torch.no_grad():
-                    output_tile = self.model(input_tile).cpu()
+                    output_tile = self.model(input_tile)
+                    if self.device.type == 'privateuseone':
+                        output_tile = output_tile.cpu()
             except RuntimeError as error:
                 print('Error', error)
             print(f'\tTile {tile_idx}/{tiles_x * tiles_y}')
@@ -72,6 +74,7 @@ def realesrgan_tile_process_fix(self):
             self.output[:, :, output_start_y:output_end_y,
                         output_start_x:output_end_x] = output_tile[:, :, output_start_y_tile:output_end_y_tile,
                                                                     output_start_x_tile:output_end_x_tile]
+    self.output = self.output.to(self.device)
 
 
 class UpscalerRealESRGAN(Upscaler):
