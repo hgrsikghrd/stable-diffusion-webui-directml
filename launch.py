@@ -231,9 +231,6 @@ def prepare_environment():
     print(f"Python {sys.version}")
     print(f"Commit hash: {commit}")
 
-    if pip_installer_location is not None and not is_installed("pip"):
-        run(f'"{python}" "{pip_installer_location}"', "Installing pip", "Couldn't install pip")
-
     if reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
         run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
 
