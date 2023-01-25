@@ -86,8 +86,11 @@ dml = torch_directml.device(torch_directml.default_device())
 adl = None
 hMEM = None
 try:
-    adl = atiadlxx.ATIADLxx()
-    hMEM = adl.getADLMemoryInfo2(0).iHyperMemorySize
+    if "AMD" in torch_directml.device_name(dml.index):
+        adl = atiadlxx.ATIADLxx()
+        hMEM = adl.getADLMemoryInfo2(0).iHyperMemorySize
+    else:
+        print("Warning: experimental graphic memory optimizations are disabled due to gpu vendor.")
 except RuntimeError:
     print("Memory optimization for DirectML is disabled. Because this is not Windows platform.")
 device = device_interrogate = device_gfpgan = device_esrgan = device_codeformer = None
