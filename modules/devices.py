@@ -2,7 +2,7 @@ import sys, os, shlex
 import contextlib
 import torch
 import torch_directml
-from modules import errors
+from modules import errors, atiadlxx
 from packaging import version
 from functools import reduce
 import operator
@@ -83,6 +83,13 @@ errors.run(enable_tf32, "Enabling TF32")
 
 cpu = torch.device("cpu")
 dml = torch_directml.device(torch_directml.default_device())
+adl = None
+hMEM = None
+try:
+    adl = atiadlxx.ATIADLxx()
+    hMEM = adl.getADLMemoryInfo2(0).iHyperMemorySize
+except RuntimeError:
+    print("Memory optimization for DirectML is disabled. Because this is not Windows platform.")
 device = device_interrogate = device_gfpgan = device_esrgan = device_codeformer = None
 dtype = torch.float16
 dtype_vae = torch.float16

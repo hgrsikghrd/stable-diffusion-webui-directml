@@ -101,7 +101,7 @@ parser.add_argument("--tls-keyfile", type=str, help="Partially enables TLS, requ
 parser.add_argument("--tls-certfile", type=str, help="Partially enables TLS, requires --tls-keyfile to fully function", default=None)
 parser.add_argument("--server-name", type=str, help="Sets hostname of server", default=None)
 parser.add_argument("--gradio-queue", action='store_true', help="Uses gradio queue; experimental option; breaks restart UI button")
-parser.add_argument("--vram", type=int, help="Let directml know how much memory does your device have", default=None)
+parser.add_argument("--disable-experimental-memopt", action='store_true', help="Disable experimental graphic memory optimizations")
 
 
 script_loading.preload_extensions(extensions.extensions_dir, parser)
@@ -134,11 +134,15 @@ ui_reorder_categories = [
 ]
 
 cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or cmd_opts.server_name) and not cmd_opts.enable_insecure_extension_access
+if devices.adl is None:
+    print("Disabled experimental graphic memory optimizations.")
+    cmd_opts.disable_experimental_memopt = True
 
 devices.device, devices.device_interrogate, devices.device_gfpgan, devices.device_esrgan, devices.device_codeformer = \
     (devices.cpu if any(y in cmd_opts.use_cpu for y in [x, 'all']) else devices.get_optimal_device() for x in ['sd', 'interrogate', 'gfpgan', 'esrgan', 'codeformer'])
 
 device = devices.device
+hMEM = devices.hMEM
 weight_load_location = None if cmd_opts.lowram else "cpu"
 
 batch_cond_uncond = cmd_opts.always_batch_cond_uncond or not (cmd_opts.lowvram or cmd_opts.medvram)
