@@ -15,10 +15,26 @@ class ATIADLxx(object):
         for adapter in AdapterInfoArray:
             self.devices.append(adapter.iAdapterIndex)
 
-    def getADLMemoryInfo2(self, adapterIndex):
+    def getMemoryInfo2(self, adapterIndex):
         info = ADLMemoryInfo2()
 
         if ADL2_Adapter_MemoryInfo2_Get(self.context, adapterIndex, C.byref(info)) != ADL_OK:
             raise RuntimeError("Failed to get MemoryInfo2")
         
         return info
+
+    def getDedicatedVRAMUsage(self, adapterIndex):
+        usage = C.c_int(-1)
+
+        if ADL2_Adapter_DedicatedVRAMUsage_Get(self.context, adapterIndex, C.byref(usage)) != ADL_OK:
+            raise RuntimeError("Failed to get VRAMUsage")
+
+        return usage.value
+
+    def getVRAMUsage(self, adapterIndex):
+        usage = C.c_int(-1)
+
+        if ADL2_Adapter_VRAMUsage_Get(self.context, adapterIndex, C.byref(usage)) != ADL_OK:
+            raise RuntimeError("Failed to get VRAMUsage")
+
+        return usage.value

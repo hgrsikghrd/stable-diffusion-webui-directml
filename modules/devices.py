@@ -88,7 +88,7 @@ hMEM = None
 try:
     if "AMD" in torch_directml.device_name(dml.index):
         adl = atiadlxx.ATIADLxx()
-        hMEM = adl.getADLMemoryInfo2(0).iHyperMemorySize
+        hMEM = adl.getMemoryInfo2(0).iHyperMemorySize
     else:
         print("Warning: experimental graphic memory optimizations are disabled due to gpu vendor.")
 except RuntimeError:

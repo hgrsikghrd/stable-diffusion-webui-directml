@@ -142,6 +142,7 @@ devices.device, devices.device_interrogate, devices.device_gfpgan, devices.devic
     (devices.cpu if any(y in cmd_opts.use_cpu for y in [x, 'all']) else devices.get_optimal_device() for x in ['sd', 'interrogate', 'gfpgan', 'esrgan', 'codeformer'])
 
 device = devices.device
+adl = devices.adl
 hMEM = devices.hMEM
 weight_load_location = None if cmd_opts.lowram else "cpu"
 

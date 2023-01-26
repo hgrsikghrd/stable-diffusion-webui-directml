@@ -38,3 +38,11 @@ ADL2_Adapter_AdapterInfo_Get.argtypes = [ADL_CONTEXT_HANDLE, LPAdapterInfo, C.c_
 ADL2_Adapter_MemoryInfo2_Get = atiadlxx.ADL2_Adapter_MemoryInfo2_Get
 ADL2_Adapter_MemoryInfo2_Get.restype = C.c_int
 ADL2_Adapter_MemoryInfo2_Get.argtypes = [ADL_CONTEXT_HANDLE, C.c_int, C.POINTER(ADLMemoryInfo2)]
+
+ADL2_Adapter_DedicatedVRAMUsage_Get = atiadlxx.ADL2_Adapter_DedicatedVRAMUsage_Get
+ADL2_Adapter_DedicatedVRAMUsage_Get.restype = C.c_int
+ADL2_Adapter_DedicatedVRAMUsage_Get.argtypes = [ADL_CONTEXT_HANDLE, C.c_int, C.POINTER(C.c_int)]
+
+ADL2_Adapter_VRAMUsage_Get = atiadlxx.ADL2_Adapter_VRAMUsage_Get
+ADL2_Adapter_VRAMUsage_Get.restype = C.c_int
+ADL2_Adapter_VRAMUsage_Get.argtypes = [ADL_CONTEXT_HANDLE, C.c_int, C.POINTER(C.c_int)]
