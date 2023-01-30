@@ -206,7 +206,7 @@ def einsum_op_cuda(q, k, v):
 def einsum_op_dml(q, k, v):
     mem_active = shared.adl.getDedicatedVRAMUsage(0)
     mem_reserved = shared.hMEM / (1 << 20) * 0.7 # assume allocated memory
-    return einsum_op_tensor_mem(q, k, v, mem_reserved - mem_active if mem_reserved > mem_active else 0)
+    return einsum_op_tensor_mem(q, k, v, mem_reserved - mem_active if mem_reserved > mem_active else 1)
 
 def einsum_op(q, k, v):
     if q.device.type == 'cuda':
