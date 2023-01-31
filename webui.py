@@ -12,7 +12,7 @@ from packaging import version
 import logging
 logging.getLogger("xformers").addFilter(lambda record: 'A matching Triton is not available' not in record.getMessage())
 
-from modules import import_hook, errors, extra_networks
+from modules import import_hook, errors, extra_networks, ui_extra_networks_checkpoints
 from modules import extra_networks_hypernet, ui_extra_networks_hypernets, ui_extra_networks_textual_inversion
 from modules.call_queue import wrap_queued_call, queue_lock, wrap_gradio_gpu_call
 
@@ -52,6 +52,9 @@ else:
 
 
 def check_versions():
+    if shared.cmd_opts.skip_version_check:
+        return
+
     expected_torch_version = "1.13.1"
 
     if version.parse(torch.__version__) < version.parse(expected_torch_version):
@@ -59,7 +62,10 @@ def check_versions():
 You are running torch {torch.__version__}.
 The program is tested to work with torch {expected_torch_version}.
 To reinstall the desired version, run with commandline flag --reinstall-torch.
-Beware that this will cause a lot of large files to be downloaded.
+Beware that this will cause a lot of large files to be downloaded, as well as
+there are reports of issues with training tab on the latest version.
+
+Use --skip-version-check commandline argument to disable this check.
         """.strip())
 
     expected_xformers_version = "0.0.16rc425"
@@ -71,6 +77,8 @@ Beware that this will cause a lot of large files to be downloaded.
 You are running xformers {xformers.__version__}.
 The program is tested to work with xformers {expected_xformers_version}.
 To reinstall the desired version, run with commandline flag --reinstall-xformers.
+
+Use --skip-version-check commandline argument to disable this check.
             """.strip())
 
 
@@ -119,6 +127,7 @@ def initialize():
     ui_extra_networks.intialize()
     ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
     ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+    ui_extra_networks.register_page(ui_extra_networks_checkpoints.ExtraNetworksPageCheckpoints())
 
     extra_networks.initialize()
     extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
@@ -227,6 +236,8 @@ def webui():
         if launch_api:
             create_api(app)
 
+        ui_extra_networks.add_pages_to_demo(app)
+
         modules.script_callbacks.app_started_callback(shared.demo, app)
 
         wait_on_server(shared.demo)
@@ -254,6 +265,7 @@ def webui():
         ui_extra_networks.intialize()
         ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
         ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+        ui_extra_networks.register_page(ui_extra_networks_checkpoints.ExtraNetworksPageCheckpoints())
 
         extra_networks.initialize()
         extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())

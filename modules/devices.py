@@ -112,6 +112,14 @@ dtype_unet = torch.float16
 unet_needs_upcast = False
 
 
+def cond_cast_unet(input):
+    return input.to(dtype_unet) if unet_needs_upcast else input
+
+
+def cond_cast_float(input):
+    return input.float() if unet_needs_upcast else input
+
+
 def randn(seed, shape):
     torch.manual_seed(seed)
     if device.type == 'mps':
@@ -275,8 +283,6 @@ if has_mps():
         cumsum_needs_bool_fix = not torch.BoolTensor([True,True]).to(device=torch.device("mps"), dtype=torch.int64).equal(torch.BoolTensor([True,False]).to(torch.device("mps")).cumsum(0))
         torch.cumsum = lambda input, *args, **kwargs: ( cumsum_fix(input, orig_cumsum, *args, **kwargs) )
         torch.Tensor.cumsum = lambda self, *args, **kwargs: ( cumsum_fix(self, orig_Tensor_cumsum, *args, **kwargs) )
-        orig_narrow = torch.narrow
-        torch.narrow = lambda *args, **kwargs: ( orig_narrow(*args, **kwargs).clone() )
 
 
 if torch_directml.is_available():
@@ -285,4 +291,3 @@ if torch_directml.is_available():
     torch.nn.Linear = Linear
     torch.nn.Conv2d = Conv2d
     torch.nn.functional.pad = pad
-
