@@ -2,7 +2,7 @@ import sys
 import contextlib
 import torch
 import torch_directml
-from modules import errors, atiadlxx
+from modules import errors
 from modules.sd_hijack_utils import CondFunc
 from packaging import version
 from functools import reduce
@@ -98,6 +98,7 @@ hMEM = None
 try:
     dml = torch_directml.device(torch_directml.default_device())
     if dml.type == "privateuseone" and "AMD" in torch_directml.device_name(dml.index):
+        from modules import atiadlxx
         adl = atiadlxx.ATIADLxx()
         hMEM = adl.getMemoryInfo2(0).iHyperMemorySize
     else:
