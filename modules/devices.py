@@ -243,11 +243,21 @@ def pad(input, pad, mode='constant', value=None):
         return _pad(input, pad, mode, value)
 
 
+_cumsum = torch.Tensor.cumsum
+def cumsum(self, *args, **kwargs):
+    if self.dtype == torch.bool:
+        return _cumsum(self.int(), *args, **kwargs)
+    else:
+        return _cumsum(self, *args, **kwargs)
+
+
 if torch_directml.is_available():
     torch.nn.GroupNorm = GroupNorm
     torch.nn.LayerNorm = LayerNorm
     torch.nn.Linear = Linear
     torch.nn.Conv2d = Conv2d
     torch.nn.functional.pad = pad
+
+    torch.Tensor.cumsum = cumsum
 
     CondFunc('torchsde._brownian.brownian_interval._randn', lambda _, size, dtype, device, seed: torch.randn(size, dtype=dtype, device=torch.device("cpu"), generator=torch.Generator(torch.device("cpu")).manual_seed(int(seed))).to(device), lambda _, size, dtype, device, seed: device.type == 'privateuseone')
