@@ -27,7 +27,7 @@ class ATIADLxx(object):
         usage = C.c_int(-1)
 
         if ADL2_Adapter_DedicatedVRAMUsage_Get(self.context, adapterIndex, C.byref(usage)) != ADL_OK:
-            raise RuntimeError("Failed to get VRAMUsage")
+            raise RuntimeError("Failed to get DedicatedVRAMUsage")
 
         return usage.value
 
