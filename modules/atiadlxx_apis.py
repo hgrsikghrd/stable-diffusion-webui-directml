@@ -6,7 +6,6 @@ _platform = platform.system()
 
 if _platform == "Windows":
     atiadlxx = C.WinDLL("atiadlxx.dll")
-    _platform = platform.system()
 
     ADL_MAIN_MALLOC_CALLBACK = C.CFUNCTYPE(C.c_void_p, C.c_int)
     ADL_MAIN_FREE_CALLBACK = C.CFUNCTYPE(None, C.POINTER(C.c_void_p))
