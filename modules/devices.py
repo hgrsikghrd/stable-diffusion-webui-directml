@@ -103,7 +103,7 @@ try:
         hMEM = adl.getMemoryInfo2(0).iHyperMemorySize
     else:
         print("Warning: experimental graphic memory optimizations are disabled due to gpu vendor.")
-except RuntimeError, e:
+except RuntimeError as e:
     if str(e) == 'NOT_WINDOWS':
         print("Memory optimization for DirectML is disabled. Because this is not Windows platform.")
     else:
