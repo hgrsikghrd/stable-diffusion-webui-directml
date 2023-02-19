@@ -102,12 +102,14 @@ try:
         adl = atiadlxx.ATIADLxx()
         hMEM = adl.getMemoryInfo2(0).iHyperMemorySize
     else:
-        print("Warning: experimental graphic memory optimizations are disabled due to gpu vendor.")
+        print("Warning: experimental graphic memory optimization is disabled due to gpu vendor. Currently this optimization is only available for AMDGPUs.")
 except RuntimeError as e:
     if str(e) == 'NOT_WINDOWS':
-        print("Memory optimization for DirectML is disabled. Because this is not Windows platform.")
+        print("Warning: experimental graphic memory optimization for AMDGPU is disabled. Because this is not Windows platform.")
     else:
-        print("Memory optimization for DirectML is disabled. Because there is an unknown error.")
+        print("Warning: experimental graphic memory optimization for AMDGPU is disabled. Because there is an unknown error.")
+except FileNotFoundError:
+    print("Warning: memory optimization for AMDGPU is disabled. Because couldn't find 'atiadlxx.dll'. Please install GPU driver downloaded from AMD.com.")
 device = device_interrogate = device_gfpgan = device_esrgan = device_codeformer = None
 dtype = torch.float16
 dtype_vae = torch.float16
