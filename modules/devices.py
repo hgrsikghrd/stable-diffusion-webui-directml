@@ -256,13 +256,15 @@ def cumsum(self, *args, **kwargs):
         return _cumsum(self, *args, **kwargs)
 
 
-if torch_directml.is_available():
-    torch.nn.GroupNorm = GroupNorm
-    torch.nn.LayerNorm = LayerNorm
-    torch.nn.Linear = Linear
-    torch.nn.Conv2d = Conv2d
-    torch.nn.functional.pad = pad
+_cat = torch.cat
+def cat(tensors, *args, **kwargs):
+    _tensors = []
+    for i in range(len(tensors)):
+        _tensors.append(tensors[i].type(dtype))
+    return _cat(_tensors, *args, **kwargs)
 
+
+if torch_directml.is_available():
     torch.Tensor.cumsum = cumsum
 
     CondFunc('torchsde._brownian.brownian_interval._randn', lambda _, size, dtype, device, seed: torch.randn(size, dtype=dtype, device=torch.device("cpu"), generator=torch.Generator(torch.device("cpu")).manual_seed(int(seed))).to(device), lambda _, size, dtype, device, seed: device.type == 'privateuseone')
