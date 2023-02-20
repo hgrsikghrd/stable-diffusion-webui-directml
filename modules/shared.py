@@ -145,15 +145,6 @@ cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or cmd_op
 if devices.adl is None or devices.hMEM is None or (cmd_opts.device_id is not None and cmd_opts.device_id != "0"):
     print("Disabled experimental graphic memory optimizations.")
     cmd_opts.disable_experimental_memopt = True
-if not cmd_opts.no_half:
-    import torch
-    torch.cat = devices.cat
-
-    torch.nn.GroupNorm = devices.GroupNorm
-    torch.nn.LayerNorm = devices.LayerNorm
-    torch.nn.Linear = devices.Linear
-    torch.nn.Conv2d = devices.Conv2d
-    torch.nn.functional.pad = devices.pad
 
 
 devices.device, devices.device_interrogate, devices.device_gfpgan, devices.device_esrgan, devices.device_codeformer = \
@@ -172,6 +163,17 @@ config_filename = cmd_opts.ui_settings_file
 os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetworks = []
+
+
+if not cmd_opts.no_half and device.type == 'privateuseone':
+    import torch
+    torch.cat = devices.cat
+
+    torch.nn.GroupNorm = devices.GroupNorm
+    torch.nn.LayerNorm = devices.LayerNorm
+    torch.nn.Linear = devices.Linear
+    torch.nn.Conv2d = devices.Conv2d
+    torch.nn.functional.pad = devices.pad
 
 
 def reload_hypernetworks():
