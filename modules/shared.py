@@ -165,15 +165,21 @@ hypernetworks = {}
 loaded_hypernetworks = []
 
 
-if not cmd_opts.no_half and device.type == 'privateuseone':
-    import torch
-    torch.cat = devices.cat
+if device.type == 'privateuseone':
+    if devices.device_interrogate.type == 'privateuseone':
+        cmd_opts.use_cpu.append('interrogate')
+        devices.device_interrogate = devices.cpu
+        print('Interrogate will be fallen back to cpu. Because DirectML device does not support it.')
+    
+    if not cmd_opts.no_half:
+        import torch
+        torch.cat = devices.cat
 
-    torch.nn.GroupNorm = devices.GroupNorm
-    torch.nn.LayerNorm = devices.LayerNorm
-    torch.nn.Linear = devices.Linear
-    torch.nn.Conv2d = devices.Conv2d
-    torch.nn.functional.pad = devices.pad
+        torch.nn.GroupNorm = devices.GroupNorm
+        torch.nn.LayerNorm = devices.LayerNorm
+        torch.nn.Linear = devices.Linear
+        torch.nn.Conv2d = devices.Conv2d
+        torch.nn.functional.pad = devices.pad
 
 
 def reload_hypernetworks():
