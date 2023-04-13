@@ -4,6 +4,7 @@ import torch
 import torch_directml
 from modules import errors
 from modules.sd_hijack_utils import CondFunc
+from modules.atiadlxx import ATIADLxx
 from packaging import version
 from functools import reduce
 import operator
@@ -93,23 +94,7 @@ def enable_tf32():
 errors.run(enable_tf32, "Enabling TF32")
 
 cpu = torch.device("cpu")
-adl = None
-hMEM = None
-try:
-    dml = torch_directml.device(torch_directml.default_device())
-    if dml.type == "privateuseone" and "AMD" in torch_directml.device_name(dml.index):
-        from modules import atiadlxx
-        adl = atiadlxx.ATIADLxx()
-        hMEM = adl.getMemoryInfo2(0).iHyperMemorySize
-    else:
-        print("Warning: experimental graphic memory optimization is disabled due to gpu vendor. Currently this optimization is only available for AMDGPUs.")
-except RuntimeError as e:
-    if str(e) == 'NOT_WINDOWS':
-        print("Warning: experimental graphic memory optimization for AMDGPU is disabled. Because this is not Windows platform.")
-    else:
-        print("Warning: experimental graphic memory optimization for AMDGPU is disabled. Because there is an unknown error.")
-except FileNotFoundError:
-    print("Warning: memory optimization for AMDGPU is disabled. Because couldn't find 'atiadlxx.dll'. Please install GPU driver downloaded from AMD.com.")
+adl = ATIADLxx.create()
 device = device_interrogate = device_gfpgan = device_esrgan = device_codeformer = None
 dtype = torch.float16
 dtype_vae = torch.float16

@@ -55,17 +55,17 @@ ui_reorder_categories = [
 ]
 
 cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or cmd_opts.server_name) and not cmd_opts.enable_insecure_extension_access
-if devices.adl is None or devices.hMEM is None or (cmd_opts.device_id is not None and cmd_opts.device_id != "0"):
-    print("Disabled experimental graphic memory optimizations.")
+if devices.adl is None or (cmd_opts.device_id is not None and cmd_opts.device_id != "0"):
     cmd_opts.disable_experimental_memopt = True
+
+if cmd_opts.disable_experimental_memopt:
+    print("Disabled experimental graphic memory optimizations.")
 
 
 devices.device, devices.device_interrogate, devices.device_gfpgan, devices.device_esrgan, devices.device_codeformer = \
     (devices.cpu if any(y in cmd_opts.use_cpu for y in [x, 'all']) else devices.get_optimal_device() for x in ['sd', 'interrogate', 'gfpgan', 'esrgan', 'codeformer'])
 
 device = devices.device
-adl = devices.adl
-hMEM = devices.hMEM
 weight_load_location = None if cmd_opts.lowram else "cpu"
 
 batch_cond_uncond = cmd_opts.always_batch_cond_uncond or not (cmd_opts.lowvram or cmd_opts.medvram)
@@ -82,7 +82,7 @@ if device.type == 'privateuseone':
     if devices.device_interrogate.type == 'privateuseone':
         cmd_opts.use_cpu.append('interrogate')
         devices.device_interrogate = devices.cpu
-        print('Interrogate will be fallen back to cpu. Because DirectML device does not support it.')
+        print('Interrogations are fallen back to cpu. This doesn\'t affect on image generation. But if you want to use interrogate (CLIP or DeepBooru), check out this issue: https://github.com/lshqqytiger/stable-diffusion-webui-directml/issues/10')
     
     if not cmd_opts.no_half:
         import torch
