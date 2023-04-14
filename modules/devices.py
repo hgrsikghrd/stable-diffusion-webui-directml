@@ -4,7 +4,6 @@ import torch
 import torch_directml
 from modules import errors
 from modules.sd_hijack_utils import CondFunc
-from modules.atiadlxx import ATIADLxx
 from packaging import version
 from functools import reduce
 import operator
@@ -94,7 +93,7 @@ def enable_tf32():
 errors.run(enable_tf32, "Enabling TF32")
 
 cpu = torch.device("cpu")
-adl = ATIADLxx.create()
+adl = None
 device = device_interrogate = device_gfpgan = device_esrgan = device_codeformer = None
 dtype = torch.float16
 dtype_vae = torch.float16

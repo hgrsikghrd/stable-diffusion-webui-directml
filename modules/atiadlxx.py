@@ -23,27 +23,27 @@ class ATIADLxx(object):
             self.devices.append(adapter.iAdapterIndex)
         self.iHyperMemorySize = self.getMemoryInfo2(0).iHyperMemorySize
 
-    def getMemoryInfo2(self, adapterIndex):
+    def getMemoryInfo2(self, adapterIndex: int) -> ADLMemoryInfo2:
         info = ADLMemoryInfo2()
 
         if ADL2_Adapter_MemoryInfo2_Get(self.context, adapterIndex, C.byref(info)) != ADL_OK:
-            raise RuntimeError("Failed to get MemoryInfo2")
+            raise RuntimeError("ADL2: Failed to get MemoryInfo2")
         
         return info
 
-    def getDedicatedVRAMUsage(self, adapterIndex):
+    def getDedicatedVRAMUsage(self, adapterIndex: int) -> int:
         usage = C.c_int(-1)
 
         if ADL2_Adapter_DedicatedVRAMUsage_Get(self.context, adapterIndex, C.byref(usage)) != ADL_OK:
-            raise RuntimeError("Failed to get DedicatedVRAMUsage")
+            raise RuntimeError("ADL2: Failed to get DedicatedVRAMUsage")
 
         return usage.value
 
-    def getVRAMUsage(self, adapterIndex):
+    def getVRAMUsage(self, adapterIndex: int) -> int:
         usage = C.c_int(-1)
 
         if ADL2_Adapter_VRAMUsage_Get(self.context, adapterIndex, C.byref(usage)) != ADL_OK:
-            raise RuntimeError("Failed to get VRAMUsage")
+            raise RuntimeError("ADL2: Failed to get VRAMUsage")
 
         return usage.value
 
@@ -58,9 +58,12 @@ class ATIADLxx(object):
                 print("Warning: experimental graphic memory optimization is disabled because failed to get dedicated vram usage.")
                 return None
             case 2:
-                print("Warning: experimental graphic memory optimization is disabled due to gpu vendor. Currently this optimization is only available for AMDGPUs.")
+                print("Warning: experimental graphic memory optimization is disabled because your GPU driver seems not to support required features.")
                 return None
             case 3:
+                print("Warning: experimental graphic memory optimization is disabled due to gpu vendor. Currently this optimization is only available for AMDGPUs.")
+                return None
+            case 4:
                 print("Warning: experimental graphic memory optimization for AMDGPU is disabled. Because there is an unknown error.")
                 return None
 
@@ -68,11 +71,18 @@ class ATIADLxx(object):
         try:
             if device.type == "privateuseone" and ("AMD" in device_name or "Radeon" in device_name):
                 try:
-                    ATIADLxx()
+                    tester = ATIADLxx()
+                    tester.getDedicatedVRAMUsage(0)
+                    tester.getMemoryInfo2(0)
                     return 0 # OK
                 except AttributeError:
                     return 1 # failed to get dedicated vram usage
+                except RuntimeError as e:
+                    if "ADL2" in e:
+                        return 2
+                    return 4
             else:
-                return 2 # not AMDGPU
-        except RuntimeError:
-            return 3 # unknown
+                return 3 # not AMDGPU
+        except:
+            print("Unknown error occurred while testing whether experimental memory optimization can be applied!")
+            return 4 # unknown

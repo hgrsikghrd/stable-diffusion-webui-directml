@@ -243,8 +243,8 @@ def prepare_environment():
     taming_transformers_repo = os.environ.get('TAMING_TRANSFORMERS_REPO', "https://github.com/CompVis/taming-transformers.git")
     codeformer_repo = os.environ.get('CODEFORMER_REPO', 'https://github.com/sczhou/CodeFormer.git')
     blip_repo = os.environ.get('BLIP_REPO', 'https://github.com/salesforce/BLIP.git')
-    sd_repo = os.environ.get('BLIP_REPO', 'https://github.com/lshqqytiger/stablediffusion-directml.git')
-    k_diffusion_repo = os.environ.get('BLIP_REPO', 'https://github.com/lshqqytiger/k-diffusion-directml.git')
+    sd_repo = os.environ.get('BLIP_REPO', 'https://github.com/hgrsikghrd/stablediffusion-directml.git')
+    k_diffusion_repo = os.environ.get('BLIP_REPO', 'https://github.com/hgrsikghrd/k-diffusion-directml.git')
 
     taming_transformers_commit_hash = os.environ.get('TAMING_TRANSFORMERS_COMMIT_HASH', "24268930bf1dce879235a7fddd0b2355b84d7ea6")
     codeformer_commit_hash = os.environ.get('CODEFORMER_COMMIT_HASH', "c5b4593074ba6214284d6acd5f1719b6c5d739af")
