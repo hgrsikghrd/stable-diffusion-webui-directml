@@ -224,31 +224,5 @@ class Conv2d(torch.nn.Conv2d):
             return super().forward(x)
 
 
-_pad = torch.nn.functional.pad
-def pad(input, pad, mode='constant', value=None):
-    if input.dtype == torch.float16 and input.device.type == 'privateuseone':
-        return _pad(input.float(), pad, mode, value).type(input.dtype)
-    else:
-        return _pad(input, pad, mode, value)
-
-
-_cumsum = torch.Tensor.cumsum
-def cumsum(self, *args, **kwargs):
-    if self.dtype == torch.bool:
-        return _cumsum(self.int(), *args, **kwargs)
-    else:
-        return _cumsum(self, *args, **kwargs)
-
-
-_cat = torch.cat
-def cat(tensors, *args, **kwargs):
-    _tensors = []
-    for i in range(len(tensors)):
-        _tensors.append(tensors[i].type(dtype))
-    return _cat(_tensors, *args, **kwargs)
-
-
 if torch_directml.is_available():
-    torch.Tensor.cumsum = cumsum
-
     CondFunc('torchsde._brownian.brownian_interval._randn', lambda _, size, dtype, device, seed: torch.randn(size, dtype=dtype, device=torch.device("cpu"), generator=torch.Generator(torch.device("cpu")).manual_seed(int(seed))).to(device), lambda _, size, dtype, device, seed: device.type == 'privateuseone')
