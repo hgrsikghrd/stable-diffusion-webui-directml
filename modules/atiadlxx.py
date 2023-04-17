@@ -78,11 +78,11 @@ class ATIADLxx(object):
                 except AttributeError:
                     return 1 # failed to get dedicated vram usage
                 except RuntimeError as e:
-                    if "ADL2" in e:
+                    if "ADL2" in str(e):
                         return 2
                     return 4
             else:
                 return 3 # not AMDGPU
         except:
-            print("Unknown error occurred while testing whether experimental memory optimization can be applied!")
+            print(f"\nUnknown error occurred while testing whether experimental memory optimization can be applied!")
             return 4 # unknown

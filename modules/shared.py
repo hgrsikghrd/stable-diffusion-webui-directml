@@ -55,14 +55,14 @@ ui_reorder_categories = [
 ]
 
 cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or cmd_opts.server_name) and not cmd_opts.enable_insecure_extension_access
-if cmd_opts.device_id is not None and cmd_opts.device_id != "0":
-    cmd_opts.disable_experimental_memopt = True
+if not cmd_opts.disable_experimental_memopt:
+    from modules.atiadlxx import ATIADLxx
+    devices.adl = ATIADLxx.create()
+    if devices.adl is None or (cmd_opts.device_id is not None and cmd_opts.device_id != "0"):
+        cmd_opts.disable_experimental_memopt = True
 
 if cmd_opts.disable_experimental_memopt:
     print("Disabled experimental graphic memory optimizations.")
-else:
-    from modules.atiadlxx import ATIADLxx
-    devices.adl = ATIADLxx.create()
 
 
 devices.device, devices.device_interrogate, devices.device_gfpgan, devices.device_esrgan, devices.device_codeformer = \
