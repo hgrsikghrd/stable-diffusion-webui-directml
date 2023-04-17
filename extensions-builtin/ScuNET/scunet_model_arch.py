@@ -77,7 +77,10 @@ class WMSA(nn.Module):
         # Using Attn Mask to distinguish different subwindows.
         if self.type != 'W':
             attn_mask = self.generate_mask(h_windows, w_windows, self.window_size, shift=self.window_size // 2)
-            sim = sim.masked_fill_(attn_mask, float("-inf"))
+            try:
+                sim = sim.masked_fill_(attn_mask, float("-inf"))
+            except:
+                sim = sim.cpu().masked_fill_(attn_mask.cpu(), float("-inf")).to(sim.device)
 
         probs = nn.functional.softmax(sim, dim=-1)
         output = torch.einsum('hbwij,hbwjc->hbwic', probs, v)
