@@ -140,29 +140,56 @@ def inference(img, model, tile, tile_overlap, window_size, scale):
     stride = tile - tile_overlap
     h_idx_list = list(range(0, h - tile, stride)) + [h - tile]
     w_idx_list = list(range(0, w - tile, stride)) + [w - tile]
-    E = torch.zeros(b, c, h * sf, w * sf, dtype=devices.dtype, device=device_swinir).type_as(img)
-    W = torch.zeros_like(E, dtype=devices.dtype, device=device_swinir)
+    if device_swinir.type == 'privateuseone':
+        E = torch.zeros(b, c, h * sf, w * sf, dtype=devices.dtype).type_as(img).cpu()
+        W = torch.zeros_like(E, dtype=devices.dtype).cpu()
 
-    with tqdm(total=len(h_idx_list) * len(w_idx_list), desc="SwinIR tiles") as pbar:
-        for h_idx in h_idx_list:
-            if state.interrupted or state.skipped:
-                break
-
-            for w_idx in w_idx_list:
+        with tqdm(total=len(h_idx_list) * len(w_idx_list), desc="SwinIR tiles") as pbar:
+            for h_idx in h_idx_list:
                 if state.interrupted or state.skipped:
                     break
-                
-                in_patch = img[..., h_idx: h_idx + tile, w_idx: w_idx + tile]
-                out_patch = model(in_patch)
-                out_patch_mask = torch.ones_like(out_patch)
 
-                E[
-                ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
-                ].add_(out_patch)
-                W[
-                ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
-                ].add_(out_patch_mask)
-                pbar.update(1)
+                for w_idx in w_idx_list:
+                    if state.interrupted or state.skipped:
+                        break
+                    
+                    in_patch = img[..., h_idx: h_idx + tile, w_idx: w_idx + tile]
+                    out_patch = model(in_patch).cpu()
+                    out_patch_mask = torch.ones_like(out_patch)
+
+                    E[
+                    ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
+                    ].add_(out_patch)
+                    W[
+                    ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
+                    ].add_(out_patch_mask)
+                    pbar.update(1)
+        E = E.to(device_swinir)
+        W = W.to(device_swinir)
+    else:
+        E = torch.zeros(b, c, h * sf, w * sf, dtype=devices.dtype, device=device_swinir).type_as(img)
+        W = torch.zeros_like(E, dtype=devices.dtype, device=device_swinir)
+
+        with tqdm(total=len(h_idx_list) * len(w_idx_list), desc="SwinIR tiles") as pbar:
+            for h_idx in h_idx_list:
+                if state.interrupted or state.skipped:
+                    break
+
+                for w_idx in w_idx_list:
+                    if state.interrupted or state.skipped:
+                        break
+                    
+                    in_patch = img[..., h_idx: h_idx + tile, w_idx: w_idx + tile]
+                    out_patch = model(in_patch)
+                    out_patch_mask = torch.ones_like(out_patch)
+
+                    E[
+                    ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
+                    ].add_(out_patch)
+                    W[
+                    ..., h_idx * sf: (h_idx + tile) * sf, w_idx * sf: (w_idx + tile) * sf
+                    ].add_(out_patch_mask)
+                    pbar.update(1)
     output = E.div_(W)
 
     return output
