@@ -18,9 +18,7 @@ class UpscalerRealESRGAN(Upscaler):
         super().__init__()
         try:
             from basicsr.archs.rrdbnet_arch import RRDBNet
-            from realesrgan import RealESRGANer
             from realesrgan.archs.srvgg_arch import SRVGGNetCompact
-            RealESRGANer.tile_process = realesrgan_tile_process_fix
             self.enable = True
             self.scalers = []
             scalers = self.load_models(path)
