@@ -2,6 +2,7 @@
 import subprocess
 import os
 import sys
+import shutil
 import importlib.util
 import shlex
 import platform
@@ -172,9 +173,6 @@ def version_check(commit):
             print("| You are not up to date with the most recent release. |")
             print("| Consider running `git pull` to update.               |")
             print("--------------------------------------------------------")
-            print("최신 커밋이 아닙니다.")
-            print("파워쉘 간단 설치: webui-directml-update.ps1 실행")
-            print("직접 설치: `git pull` 후 `git submodule update`")
         elif commits['commit']['sha'] == commit:
             print("You are up to date with the most recent release.")
         else:
@@ -225,7 +223,13 @@ def run_extensions_installers(settings_file):
 
 
 def prepare_environment():
-    torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
+    run_pip("install torch-directml", "DirectML")
+    import torch_directml
+    device_name = torch_directml.device_name(torch_directml.default_device())
+    if 'NVIDIA' in device_name or 'GeForce' in device_name:
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu118')
+    else:
+        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.17')

@@ -32,7 +32,6 @@ def get_cuda_device_string():
 
     if shared.cmd_opts.device_id is not None:
         return f"cuda:{shared.cmd_opts.device_id}"
-
     return "cuda"
 
 
@@ -41,7 +40,6 @@ def get_dml_device_string():
 
     if shared.cmd_opts.device_id is not None:
         return f"privateuseone:{shared.cmd_opts.device_id}"
-
     return "privateuseone:0"
 
 
@@ -172,17 +170,6 @@ def test_for_nans(x, where):
     message += " Use --disable-nan-check commandline argument to disable this check."
 
     raise NansException(message)
-
-
-# MPS workaround for https://github.com/pytorch/pytorch/issues/89784
-def cumsum_fix(input, cumsum_func, *args, **kwargs):
-    if input.device.type == 'mps':
-        output_dtype = kwargs.get('dtype', input.dtype)
-        if output_dtype == torch.int64:
-            return cumsum_func(input.cpu(), *args, **kwargs).to(input.device)
-        elif cumsum_needs_bool_fix and output_dtype == torch.bool or cumsum_needs_int_fix and (output_dtype == torch.int8 or output_dtype == torch.int16):
-            return cumsum_func(input.to(torch.int32), *args, **kwargs).to(torch.int64)
-    return cumsum_func(input, *args, **kwargs)
 
 
 class GroupNorm(torch.nn.GroupNorm):
