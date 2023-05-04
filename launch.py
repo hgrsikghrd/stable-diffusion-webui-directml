@@ -223,13 +223,13 @@ def run_extensions_installers(settings_file):
 
 
 def prepare_environment():
-    run_pip("install torch-directml", "DirectML")
-    import torch_directml
-    device_name = torch_directml.device_name(torch_directml.default_device())
-    if 'NVIDIA' in device_name or 'GeForce' in device_name:
+    if shutil.which('nvidia-smi') is not None:
         torch_command = os.environ.get('TORCH_COMMAND', 'torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu118')
+    elif shutil.which('rocminfo') is not None:
+        os.environ.setdefault('HSA_OVERRIDE_GFX_VERSION', '10.3.0')
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.4.2')
     else:
-        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
+        torch_command = os.environ.get('TORCH_COMMAND', "torch==2.0.0 torchvision==0.15.1 torch-directml")
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.17')
@@ -258,7 +258,7 @@ def prepare_environment():
     print(f"Commit hash: {commit}")
 
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
-        run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+        run(f'"{python}" -m pip install {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
 
     if not is_installed("gfpgan"):
         run_pip(f"install {gfpgan_package}", "gfpgan")
