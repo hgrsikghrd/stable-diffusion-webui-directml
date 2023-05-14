@@ -133,6 +133,9 @@ def autocast(disable=False):
     if dtype == torch.float32 or shared.cmd_opts.precision == "full":
         return contextlib.nullcontext()
 
+    if device.type == "privateuseone":
+        return torch.dml.autocast()
+
     return torch.autocast("cuda")
 
 
@@ -170,49 +173,6 @@ def test_for_nans(x, where):
     message += " Use --disable-nan-check commandline argument to disable this check."
 
     raise NansException(message)
-
-
-class GroupNorm(torch.nn.GroupNorm):
-    def forward(self, x):
-        if (x.dtype == torch.float16 or self.weight.dtype == torch.float16) and x.device.type == 'privateuseone':
-            self.weight = torch.nn.Parameter(self.weight.float())
-            self.bias = torch.nn.Parameter(self.bias.float())
-            return super().forward(x.float()).type(x.dtype)
-        else:
-            return super().forward(x)
-
-
-class LayerNorm(torch.nn.LayerNorm):
-    def forward(self, x):
-        if (x.dtype == torch.float16 or self.weight.dtype == torch.float16) and x.device.type == 'privateuseone':
-            self.weight = torch.nn.Parameter(self.weight.float())
-            if self.bias is not None and self.bias.dtype == torch.float16:
-                self.bias = torch.nn.Parameter(self.bias.float())
-            return super().forward(x.float()).type(x.dtype)
-        else:
-            return super().forward(x)
-
-
-class Linear(torch.nn.Linear):
-    def forward(self, x):
-        if (x.dtype == torch.float16 or self.weight.dtype == torch.float16) and x.device.type == 'privateuseone':
-            self.weight = torch.nn.Parameter(self.weight.float())
-            if self.bias is not None and self.bias.dtype == torch.float16:
-                self.bias = torch.nn.Parameter(self.bias.float())
-            return super().forward(x.float()).type(x.dtype)
-        else:
-            return super().forward(x)
-
-
-class Conv2d(torch.nn.Conv2d):
-    def forward(self, x):
-        if (x.dtype == torch.float16 or self.weight.dtype == torch.float16) and x.device.type == 'privateuseone':
-            self.weight = torch.nn.Parameter(self.weight.float())
-            if self.bias is not None and self.bias.dtype == torch.float16:
-                self.bias = torch.nn.Parameter(self.bias.float())
-            return super().forward(x.float()).type(x.dtype)
-        else:
-            return super().forward(x)
 
 
 if torch_directml.is_available():

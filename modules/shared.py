@@ -92,13 +92,6 @@ loaded_hypernetworks = []
 
 if device.type == 'privateuseone':
     import modules.dml
-    if not cmd_opts.no_half:
-        import torch
-
-        torch.nn.GroupNorm = devices.GroupNorm
-        torch.nn.LayerNorm = devices.LayerNorm
-        torch.nn.Linear = devices.Linear
-        torch.nn.Conv2d = devices.Conv2d
 
 
 def reload_hypernetworks():
