@@ -2,7 +2,7 @@ import torch
 import torch_directml
 
 import modules.dml.hijack
-from modules.dml.autocast_mode import *
+import modules.dml.amp as amp
 
 from .optimizer.unknown import UnknownOptimizer
 
@@ -10,7 +10,7 @@ class DirectML():
     _is_autocast_enabled = False
     _autocast_dtype = torch.float16
     def get_optimizer(device: torch.device):
-        assert(device.type == 'privateuseone')
+        assert device.type == 'privateuseone'
         try:
             device_name = torch_directml.device_name(device.index)
             if 'NVIDIA' in device_name or 'GeForce' in device_name:
@@ -42,5 +42,5 @@ class DirectML():
         DirectML._is_autocast_enabled = enabled
 
 # Alternative of torch.cuda for DirectML.
-DirectML.autocast = autocast
+DirectML.amp = amp
 torch.dml = DirectML

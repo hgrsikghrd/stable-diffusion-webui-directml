@@ -134,7 +134,7 @@ def autocast(disable=False):
         return contextlib.nullcontext()
 
     if device.type == "privateuseone":
-        return torch.dml.autocast()
+        return torch.dml.amp.autocast(dtype)
 
     return torch.autocast("cuda")
 
