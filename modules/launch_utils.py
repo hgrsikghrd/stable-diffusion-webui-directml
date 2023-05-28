@@ -256,12 +256,6 @@ def prepare_environment():
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
         run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
 
-    if not args.skip_torch_cuda_test and not check_run_python("import torch; assert torch.cuda.is_available()"):
-        raise RuntimeError(
-            'Torch is not able to use GPU; '
-            'add --skip-torch-cuda-test to COMMANDLINE_ARGS variable to disable this check'
-        )
-
     if not is_installed("gfpgan"):
         run_pip(f"install {gfpgan_package}", "gfpgan")
 
@@ -320,8 +314,6 @@ def configure_for_tests():
     if "--ckpt" not in sys.argv:
         sys.argv.append("--ckpt")
         sys.argv.append(os.path.join(script_path, "test/test_files/empty.pt"))
-    if "--skip-torch-cuda-test" not in sys.argv:
-        sys.argv.append("--skip-torch-cuda-test")
     if "--disable-nan-check" not in sys.argv:
         sys.argv.append("--disable-nan-check")
 
