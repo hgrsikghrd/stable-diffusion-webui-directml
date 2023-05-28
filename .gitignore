@@ -4,6 +4,7 @@ __pycache__
 *.pth
 /ESRGAN/*
 /SwinIR/*
+/repositories
 /venv
 /tmp
 /model.ckpt
