@@ -147,13 +147,10 @@ def inference(img, model, tile, tile_overlap, window_size, scale):
             for h_idx in h_idx_list:
                 if state.interrupted or state.skipped:
                     break
-<<<<<<< HEAD
-=======
 
                 in_patch = img[..., h_idx: h_idx + tile, w_idx: w_idx + tile]
                 out_patch = model(in_patch)
                 out_patch_mask = torch.ones_like(out_patch)
->>>>>>> AUTOMATIC1111-master
 
                 for w_idx in w_idx_list:
                     if state.interrupted or state.skipped:
