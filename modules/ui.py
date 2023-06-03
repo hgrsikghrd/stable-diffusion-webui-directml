@@ -15,7 +15,7 @@ from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_grad
 
 from modules import sd_hijack, sd_models, localization, script_callbacks, ui_extensions, deepbooru, sd_vae, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML
-from modules.paths import script_path, data_path
+from modules.paths import script_path, data_path, models_path
 
 from modules.shared import opts, cmd_opts
 
@@ -34,6 +34,7 @@ from modules.textual_inversion import textual_inversion
 import modules.hypernetworks.ui
 from modules.generation_parameters_copypaste import image_from_url_text
 import modules.extras
+
 
 warnings.filterwarnings("default" if opts.show_warnings else "ignore", category=UserWarning)
 
@@ -505,10 +506,10 @@ def create_ui():
                             with FormRow(elem_id="txt2img_hires_fix_row4", variant="compact", visible=opts.hires_fix_show_prompts) as hr_prompts_container:
                                 with gr.Column(scale=80):
                                     with gr.Row():
-                                        hr_prompt = gr.Textbox(label="Prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
+                                        hr_prompt = gr.Textbox(label="Hires prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
                                 with gr.Column(scale=80):
                                     with gr.Row():
-                                        hr_negative_prompt = gr.Textbox(label="Negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
+                                        hr_negative_prompt = gr.Textbox(label="Hires negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
 
                     elif category == "batch":
                         if not opts.dimensions_and_batch_together:
@@ -1142,6 +1143,82 @@ def create_ui():
                 with gr.Group(elem_id="modelmerger_results_panel"):
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
 
+    if shared.cmd_opts.olive:
+        from modules.sd_olive import optimize_from_ckpt, optimize_from_onnx
+        with gr.Blocks(analytics_enabled=False) as olive_interface:
+            with gr.Row().style(equal_height=False):
+                with gr.Column(variant='panel'):
+                    with gr.Tabs(elem_id="olive_tabs"):
+                        with gr.Tab(label="Optimize checkpoint"):
+                            olive_checkpoint = gr.Textbox(label='Checkpoint file name', value="", elem_id="olive_checkpoint", info="Your own checkpoint file name")
+                            olive_ckpt_source_dir = gr.Textbox(label='ONNX model folder', value="stable-diffusion-v1-5", elem_id="olive_ckpt_source_dir")
+                            olive_ckpt_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_ckpt_outdir")
+
+                            with gr.Column(elem_id="olive_ckpt_dims"):
+                                olive_ckpt_sample_height_dim = gr.Slider(minimum=2, maximum=512, step=2, label="Sample Height Dimension", value=64, elem_id="olive_ckpt_sample_height_dim")
+                                olive_ckpt_sample_width_dim = gr.Slider(minimum=2, maximum=512, step=2, label="Sample Width Dimension", value=64, elem_id="olive_ckpt_sample_width_dim")
+
+                            with gr.Column(elem_id="olive_ckpt_res"):
+                                olive_ckpt_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, elem_id="olive_ckpt_sample_height")
+                                olive_ckpt_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, elem_id="olive_ckpt_sample_width")
+
+                            with FormRow(elem_id="olive_ckpt_submodels", elem_classes="checkboxes-row", variant="compact"):
+                                olive_ckpt_safety_checker = gr.Checkbox(label='Safety Checker', value=True, elem_id="olive_ckpt_safety_checker")
+                                olive_ckpt_text_encoder = gr.Checkbox(label='Text Encoder', value=True, elem_id="olive_ckpt_text_encoder")
+                                olive_ckpt_unet = gr.Checkbox(label='UNet', value=True, elem_id="olive_ckpt_unet")
+                                olive_ckpt_vae_decoder = gr.Checkbox(label='VAE Decoder', value=True, elem_id="olive_ckpt_vae_decoder")
+                                olive_ckpt_vae_encoder = gr.Checkbox(label='VAE Encoder', value=True, elem_id="olive_ckpt_vae_encoder")
+
+                            with FormRow(elem_classes="checkboxes-row", variant="compact"):
+                                olive_ckpt_use_fp16 = gr.Checkbox(label='Use half floats', value=True, elem_id="olive_ckpt_use_fp16")
+
+                            button_olive_from_ckpt = gr.Button(value="Convert & Optimize checkpoint using Olive", variant='primary', elem_id="olive_optimize_from_ckpt")
+
+                        with gr.Tab(label="Optimize ONNX model"):
+                            olive_onnx_model_id = gr.Textbox(label='ONNX Model ID', value="stable-diffusion-v1-5", elem_id="olive_onnx_model_id")
+                            olive_onnx_indir = gr.Textbox(label='Input folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_indir", info="If this folder exists, Olive will load and optimize model from it. Otherwise, download and optimize model on it.")
+                            olive_onnx_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_outdir")
+
+                            with gr.Column(elem_id="olive_onnx_dims"):
+                                olive_onnx_sample_height_dim = gr.Slider(minimum=2, maximum=512, step=2, label="Sample Height Dimension", value=64, elem_id="olive_onnx_sample_height_dim")
+                                olive_onnx_sample_width_dim = gr.Slider(minimum=2, maximum=512, step=2, label="Sample Width Dimension", value=64, elem_id="olive_onnx_sample_width_dim")
+
+                            with gr.Column(elem_id="olive_onnx_res"):
+                                olive_onnx_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, elem_id="olive_onnx_sample_height")
+                                olive_onnx_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, elem_id="olive_onnx_sample_width")
+
+                            with FormRow(elem_id="olive_onnx_submodels", elem_classes="checkboxes-row", variant="compact"):
+                                olive_onnx_safety_checker = gr.Checkbox(label='Safety Checker', value=True, elem_id="olive_onnx_safety_checker")
+                                olive_onnx_text_encoder = gr.Checkbox(label='Text Encoder', value=True, elem_id="olive_onnx_text_encoder")
+                                olive_onnx_unet = gr.Checkbox(label='UNet', value=True, elem_id="olive_onnx_unet")
+                                olive_onnx_vae_decoder = gr.Checkbox(label='VAE Decoder', value=True, elem_id="olive_onnx_vae_decoder")
+                                olive_onnx_vae_encoder = gr.Checkbox(label='VAE Encoder', value=True, elem_id="olive_onnx_vae_encoder")
+
+                            with FormRow(elem_classes="checkboxes-row", variant="compact"):
+                                olive_onnx_use_fp16 = gr.Checkbox(label='Use half floats', value=True, elem_id="olive_onnx_use_fp16")
+
+                            button_olive_from_onnx = gr.Button(value="Download & Optimize ONNX model using Olive", variant='primary', elem_id="olive_optimize_from_onnx")
+
+            button_olive_from_ckpt.click(
+                wrap_gradio_gpu_call(optimize_from_ckpt, extra_outputs=[""]),
+                inputs=[olive_checkpoint, olive_ckpt_source_dir, olive_ckpt_outdir,
+                    olive_ckpt_safety_checker, olive_ckpt_text_encoder, olive_ckpt_unet, olive_ckpt_vae_decoder, olive_ckpt_vae_encoder,
+                    olive_ckpt_use_fp16,
+                    olive_ckpt_sample_height_dim, olive_ckpt_sample_width_dim, olive_ckpt_sample_height, olive_ckpt_sample_width
+                ],
+                outputs=[],
+            )
+
+            button_olive_from_onnx.click(
+                wrap_gradio_gpu_call(optimize_from_onnx, extra_outputs=[""]),
+                inputs=[olive_onnx_model_id, olive_onnx_indir, olive_onnx_outdir,
+                    olive_onnx_safety_checker, olive_onnx_text_encoder, olive_onnx_unet, olive_onnx_vae_decoder, olive_onnx_vae_encoder,
+                    olive_onnx_use_fp16,
+                    olive_onnx_sample_height_dim, olive_onnx_sample_width_dim, olive_onnx_sample_height, olive_onnx_sample_width
+                ],
+                outputs=[],
+            )
+
     with gr.Blocks(analytics_enabled=False) as train_interface:
         with gr.Row().style(equal_height=False):
             gr.HTML(value="<p style='margin-bottom: 0.7em'>See <b><a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\">wiki</a></b> for detailed explanation.</p>")
@@ -1658,6 +1735,9 @@ def create_ui():
         (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
         (train_interface, "Train", "train"),
     ]
+
+    if cmd_opts.olive:
+        interfaces += [(olive_interface, "Olive", "olive")]
 
     interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]

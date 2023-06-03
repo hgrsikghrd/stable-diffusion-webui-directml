@@ -1,0 +1,8 @@
+diffusers
+transformers
+onnx
+accelerate
+torch==1.13.1
+torchvision==0.14.1
+onnxruntime-directml>=1.15.0
+protobuf==3.20.3

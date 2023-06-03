@@ -221,10 +221,27 @@ def run_extensions_installers(settings_file):
 
 def prepare_environment():
     torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu118")
-    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url {torch_index_url}")
-    if shutil.which('nvidia-smi') is None and shutil.which('rocminfo') is None:
+    if args.backend == 'auto':
+        nvidia_driver_found = shutil.which('nvidia-smi') is not None
+        rocm_found = shutil.which('rocminfo') is not None
+        if nvidia_driver_found:
+            args.backend = 'cuda'
+            print("NVIDIA driver was found. Automatically changed backend to 'cuda'. You can manually select which backend will be used through '--backend' argument.")
+        elif rocm_found:
+            args.backend = 'rocm'
+            print("ROCm was found. Automatically changed backend to 'rocm'. You can manually select which backend will be used through '--backend' argument.")
+        else:
+            args.backend = 'directml'
+        cmd_args.parser.set_defaults(backend=args.backend)
+    if args.backend == 'cuda':
+        torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url {torch_index_url}")
+    if args.backend == 'rocm':
+        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url https://download.pytorch.org/whl/rocm5.4.2")
+    if args.backend == 'directml':
         torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
+    
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
+    requirements_file_olive = os.environ.get('REQS_FILE', "requirements_olive.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.17')
     gfpgan_package = os.environ.get('GFPGAN_PACKAGE', "https://github.com/TencentARC/GFPGAN/archive/8d2447a2d918f8eba5a4a01463fd48e45126a379.zip")
@@ -294,6 +311,15 @@ def prepare_environment():
     if not os.path.isfile(requirements_file):
         requirements_file = os.path.join(script_path, requirements_file)
     run_pip(f"install -r \"{requirements_file}\"", "requirements")
+
+    if args.olive:
+        if args.backend != 'directml':
+            print(f"Olive optimization requires DirectML as a backend, but you have: '{args.backend}'. Try again with '--backend directml'.")
+            exit(0)
+        print("WARNING! Because Olive optimization does not support torch 2.0, some packages will be downgraded and it can occur version mismatches between packages. (Strongly recommend to create another virtual environment to run Olive)")
+        if not is_installed("olive-ai"):
+            run_pip("install olive-ai[directml]", "Olive")
+        run_pip(f"install -r \"{requirements_file_olive}\"", "requirements for Olive")
 
     run_extensions_installers(settings_file=args.ui_settings_file)
 

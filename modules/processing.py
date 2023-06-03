@@ -321,14 +321,13 @@ class StableDiffusionProcessing:
         have been used before. The second element is where the previously
         computed result is stored.
         """
-
-        if cache[0] is not None and (required_prompts, steps) == cache[0]:
+        if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info) == cache[0]:
             return cache[1]
 
         with devices.autocast():
             cache[1] = function(shared.sd_model, required_prompts, steps)
 
-        cache[0] = (required_prompts, steps)
+        cache[0] = (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info)
         return cache[1]
 
     def setup_conds(self):
@@ -596,6 +595,9 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         if sd_models.checkpoint_alisases.get(p.override_settings.get('sd_model_checkpoint')) is None:
             p.override_settings.pop('sd_model_checkpoint', None)
             sd_models.reload_model_weights()
+
+        if cmd_opts.olive:
+            return p.process()
 
         for k, v in p.override_settings.items():
             setattr(opts, k, v)
