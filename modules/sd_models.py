@@ -441,15 +441,23 @@ class SdModelData:
 model_data = SdModelData()
 
 
+def load_olive_optimized_model(checkpoint_info: CheckpointInfo, already_loaded_state_dict=None):
+    from modules.sd_olive import OliveOptimizedModel
+
+    sd_model = OliveOptimizedModel(checkpoint_info.name)
+
+    model_data.set_sd_model(sd_model)
+    print(f"Model {model_data.sd_model.dirname} loaded.")
+
+    return sd_model
+
+
 def load_model(checkpoint_info=None, already_loaded_state_dict=None):
     from modules import lowvram, sd_hijack
     checkpoint_info = checkpoint_info or select_checkpoint()
 
     if shared.cmd_opts.olive:
-        from modules.sd_olive import OliveOptimizedModel
-        model_data.set_sd_model(OliveOptimizedModel(checkpoint_info.name))
-        print(f"Model {model_data.sd_model.path} loaded.")
-        return model_data.sd_model
+        return load_olive_optimized_model(checkpoint_info, already_loaded_state_dict=already_loaded_state_dict)
 
     if model_data.sd_model:
         sd_hijack.model_hijack.undo_hijack(model_data.sd_model)

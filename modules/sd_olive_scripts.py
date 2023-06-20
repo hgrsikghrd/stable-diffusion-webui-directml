@@ -170,7 +170,8 @@ def vae_encoder_inputs(batchsize, torch_dtype):
 
 
 def vae_encoder_load(model_name):
-    model = AutoencoderKL.from_pretrained(os.environ.get("OLIVE_CKPT_PATH"), subfolder="vae")
+    subfolder = os.environ.get("OLIVE_VAE_SUBFOLDER") or None
+    model = AutoencoderKL.from_pretrained(os.environ.get("OLIVE_VAE"), subfolder=subfolder)
     model.forward = lambda sample, return_dict: model.encode(sample, return_dict)[0].sample()
     return model
 
@@ -196,7 +197,8 @@ def vae_decoder_inputs(batchsize, torch_dtype):
 
 
 def vae_decoder_load(model_name):
-    model = AutoencoderKL.from_pretrained(os.environ.get("OLIVE_CKPT_PATH"), subfolder="vae")
+    subfolder = os.environ.get("OLIVE_VAE_SUBFOLDER") or None
+    model = AutoencoderKL.from_pretrained(os.environ.get("OLIVE_VAE"), subfolder=subfolder)
     model.forward = model.decode
     return model
 

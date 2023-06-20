@@ -6,14 +6,14 @@ import shutil
 import inspect
 import onnxruntime as ort
 from pathlib import Path
-from diffusers import OnnxRuntimeModel, OnnxStableDiffusionPipeline, StableDiffusionPipeline
+from diffusers import OnnxRuntimeModel, OnnxStableDiffusionPipeline, StableDiffusionPipeline, AutoencoderKL
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.pipelines.onnx_utils import ORT_TO_NP_TYPE
 
 from olive.model import ONNXModel
 from olive.workflows import run as olive_run
 
-from modules import shared, images, devices, sd_olive_scripts
+from modules import shared, images, devices, sd_vae
 from modules.paths_internal import sd_configs_path, models_path
 from modules.processing import Processed, get_fixed_seed
 
@@ -168,7 +168,9 @@ def __call__(
     return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
 OnnxStableDiffusionPipeline.__call__ = __call__
 
-def optimize_from_ckpt(checkpoint: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
+available_sampling_methods = ["pndm", "lms", "heun", "euler", "euler-ancestral", "dpm", "ddim"]
+
+def optimize_from_ckpt(checkpoint: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, scheduler_type: str, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
     unoptimized_dir = Path(models_path) / "ONNX" / unoptimized_dir
     optimized_dir = Path(models_path) / "ONNX-Olive" / optimized_dir
     
@@ -176,12 +178,12 @@ def optimize_from_ckpt(checkpoint: str, unoptimized_dir: str, optimized_dir: str
     shutil.rmtree(unoptimized_dir, ignore_errors=True)
     shutil.rmtree(optimized_dir, ignore_errors=True)
 
-    pipeline = StableDiffusionPipeline.from_ckpt(os.path.join(models_path, "Stable-diffusion", checkpoint), torch_dtype=torch.float32, requires_safety_checker=False)
+    pipeline = StableDiffusionPipeline.from_ckpt(os.path.join(models_path, "Stable-diffusion", checkpoint), torch_dtype=torch.float32, requires_safety_checker=False, scheduler_type=scheduler_type)
     pipeline.save_pretrained(unoptimized_dir)
 
-    optimize(unoptimized_dir, optimized_dir, pipeline, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width)
+    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width)
 
-def optimize_from_onnx(model_id: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
+def optimize_from_onnx(model_id: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
     unoptimized_dir = Path(models_path) / "ONNX" / unoptimized_dir
     optimized_dir = Path(models_path) / "ONNX-Olive" / optimized_dir
     
@@ -194,9 +196,9 @@ def optimize_from_onnx(model_id: str, unoptimized_dir: str, optimized_dir: str, 
         pipeline = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32, requires_safety_checker=False)
         pipeline.save_pretrained(unoptimized_dir)
 
-    optimize(unoptimized_dir, optimized_dir, pipeline, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width)
+    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width)
 
-def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
+def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, vae_subfolder: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int):
     model_info = {}
     submodels = []
 
@@ -212,6 +214,8 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, safety_checke
         submodels += ["vae_encoder"]
 
     os.environ["OLIVE_CKPT_PATH"] = str(unoptimized_dir)
+    os.environ["OLIVE_VAE"] = vae_id or str(unoptimized_dir)
+    os.environ["OLIVE_VAE_SUBFOLDER"] = vae_subfolder
     os.environ["OLIVE_SAMPLE_HEIGHT_DIM"] = str(sample_height_dim)
     os.environ["OLIVE_SAMPLE_WIDTH_DIM"] = str(sample_width_dim)
     os.environ["OLIVE_SAMPLE_HEIGHT"] = str(sample_height)
@@ -220,7 +224,8 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, safety_checke
     for submodel_name in submodels:
         print(f"\nOptimizing {submodel_name}")
 
-        olive_config = json.load(open(Path(sd_configs_path) / "olive_optimize" / f"config_{submodel_name}.json", "r"))
+        with open(Path(sd_configs_path) / "olive_optimize" / f"config_{submodel_name}.json", "r") as olive_config_raw:
+            olive_config = json.load(olive_config_raw)
         olive_config["passes"]["optimize"]["config"]["float16"] = use_fp16
 
         olive_run(olive_config)
@@ -263,7 +268,7 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, safety_checke
         tokenizer=pipeline.tokenizer,
         unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
         scheduler=pipeline.scheduler,
-        safety_checker=None if pipeline.feature_extractor is None else OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent),
+        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent) if safety_checker else None,
         feature_extractor=pipeline.feature_extractor,
         requires_safety_checker=False,
     )
@@ -292,14 +297,21 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, safety_checke
     print(f"Optimization complete.")
 
 class OliveOptimizedModel:
-    def __init__(self, path: str):
-        self.path = path
+    dirname: str
+    path: Path
+    sd_model_hash: None
+    cond_stage_key: str
+    vae: None
+
+    def __init__(self, dirname: str):
+        self.dirname = dirname
+        self.path = Path(models_path) / "ONNX-Olive" / dirname
         self.sd_model_hash = None
         self.cond_stage_key = ""
 
 class OliveOptimizedProcessingTxt2Img:
     def __init__(self, sd_model=None, outpath_samples=None, outpath_grids=None, prompt: str = "", styles = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_name: str = None, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params = None, overlay_images = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, ddim_discretize: str = None, s_min_uncond: float = 0.0, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, override_settings = None, override_settings_restore_afterwards: bool = True, sampler_index: int = None, script_args: list = None, enable_hr: bool = False, denoising_strength: float = 0.75, firstphase_width: int = 0, firstphase_height: int = 0, hr_scale: float = 2.0, hr_upscaler: str = None, hr_second_pass_steps: int = 0, hr_resize_x: int = 0, hr_resize_y: int = 0, hr_sampler_name: str = None, hr_prompt: str = '', hr_negative_prompt: str = ''):
-        self.sd_model: Path = Path(models_path) / "ONNX-Olive" / sd_model.path
+        self.sd_model: OliveOptimizedModel = sd_model
         self.outpath_samples: str = outpath_samples
         self.outpath_grids: str = outpath_grids
         self.prompt: str = prompt
@@ -418,7 +430,7 @@ class OliveOptimizedProcessingTxt2Img:
         self.hr_c = None
         self.hr_uc = None
 
-        self.opt_config = json.load(open(self.sd_model / "opt_config.json", "r"))
+        self.opt_config = json.load(open(self.sd_model.path / "opt_config.json", "r"))
         self.sess_options = ort.SessionOptions()
         self.sess_options.enable_mem_pattern = False
         self.sess_options.add_free_dimension_override_by_name("unet_sample_batch", self.batch_size * 2)
@@ -429,7 +441,7 @@ class OliveOptimizedProcessingTxt2Img:
         self.sess_options.add_free_dimension_override_by_name("unet_hidden_batch", self.batch_size * 2)
         self.sess_options.add_free_dimension_override_by_name("unet_hidden_sequence", 77)
         self.pipeline = OnnxStableDiffusionPipeline.from_pretrained(
-            self.sd_model, provider="DmlExecutionProvider", sess_options=self.sess_options
+            self.sd_model.path, provider="DmlExecutionProvider", sess_options=self.sess_options
         )
 
     def process(self) -> Processed:

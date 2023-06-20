@@ -1144,13 +1144,15 @@ def create_ui():
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
 
     if shared.cmd_opts.olive:
-        from modules.sd_olive import optimize_from_ckpt, optimize_from_onnx
+        from modules.sd_olive import optimize_from_ckpt, optimize_from_onnx, available_sampling_methods
         with gr.Blocks(analytics_enabled=False) as olive_interface:
             with gr.Row().style(equal_height=False):
                 with gr.Column(variant='panel'):
                     with gr.Tabs(elem_id="olive_tabs"):
                         with gr.Tab(label="Optimize checkpoint"):
                             olive_checkpoint = gr.Textbox(label='Checkpoint file name', value="", elem_id="olive_checkpoint", info="Your own checkpoint file name")
+                            olive_ckpt_vae = gr.Textbox(label='VAE Source Model ID', value="", elem_id="olive_ckpt_vae", info="The VAE from this model will be used. (empty for default)")
+                            olive_ckpt_vae_subfolder = gr.Textbox(label='VAE Source Subfolder', value="vae", elem_id="olive_ckpt_vae_subfolder", info="The name of directory which has config and binary of the VAE. (empty for root)")
                             olive_ckpt_source_dir = gr.Textbox(label='ONNX model folder', value="stable-diffusion-v1-5", elem_id="olive_ckpt_source_dir")
                             olive_ckpt_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_ckpt_outdir")
 
@@ -1170,12 +1172,15 @@ def create_ui():
                                 olive_ckpt_vae_encoder = gr.Checkbox(label='VAE Encoder', value=True, elem_id="olive_ckpt_vae_encoder")
 
                             with FormRow(elem_classes="checkboxes-row", variant="compact"):
+                                olive_ckpt_sampling_method = gr.Dropdown(choices=available_sampling_methods, value="euler", label="Sampling Method", elem_id="olive_ckpt_sampling_method")
                                 olive_ckpt_use_fp16 = gr.Checkbox(label='Use half floats', value=True, elem_id="olive_ckpt_use_fp16")
 
                             button_olive_from_ckpt = gr.Button(value="Convert & Optimize checkpoint using Olive", variant='primary', elem_id="olive_optimize_from_ckpt")
 
                         with gr.Tab(label="Optimize ONNX model"):
                             olive_onnx_model_id = gr.Textbox(label='ONNX Model ID', value="stable-diffusion-v1-5", elem_id="olive_onnx_model_id")
+                            olive_onnx_vae = gr.Textbox(label='VAE Source Model ID', value="", elem_id="olive_onnx_vae", info="The VAE from this model will be used. (empty for default)")
+                            olive_onnx_vae_subfolder = gr.Textbox(label='VAE Source Subfolder', value="vae", elem_id="olive_ckpt_vae_subfolder", info="The name of directory which has config and binary of the VAE. (empty for root)")
                             olive_onnx_indir = gr.Textbox(label='Input folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_indir", info="If this folder exists, Olive will load and optimize model from it. Otherwise, download and optimize model on it.")
                             olive_onnx_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_outdir")
 
@@ -1201,9 +1206,9 @@ def create_ui():
 
             button_olive_from_ckpt.click(
                 wrap_gradio_gpu_call(optimize_from_ckpt, extra_outputs=[""]),
-                inputs=[olive_checkpoint, olive_ckpt_source_dir, olive_ckpt_outdir,
+                inputs=[olive_checkpoint, olive_ckpt_vae, olive_ckpt_vae_subfolder, olive_ckpt_source_dir, olive_ckpt_outdir,
                     olive_ckpt_safety_checker, olive_ckpt_text_encoder, olive_ckpt_unet, olive_ckpt_vae_decoder, olive_ckpt_vae_encoder,
-                    olive_ckpt_use_fp16,
+                    olive_ckpt_sampling_method, olive_ckpt_use_fp16,
                     olive_ckpt_sample_height_dim, olive_ckpt_sample_width_dim, olive_ckpt_sample_height, olive_ckpt_sample_width
                 ],
                 outputs=[],
@@ -1211,7 +1216,7 @@ def create_ui():
 
             button_olive_from_onnx.click(
                 wrap_gradio_gpu_call(optimize_from_onnx, extra_outputs=[""]),
-                inputs=[olive_onnx_model_id, olive_onnx_indir, olive_onnx_outdir,
+                inputs=[olive_onnx_model_id, olive_onnx_vae, olive_onnx_vae_subfolder, olive_onnx_indir, olive_onnx_outdir,
                     olive_onnx_safety_checker, olive_onnx_text_encoder, olive_onnx_unet, olive_onnx_vae_decoder, olive_onnx_vae_encoder,
                     olive_onnx_use_fp16,
                     olive_onnx_sample_height_dim, olive_onnx_sample_width_dim, olive_onnx_sample_height, olive_onnx_sample_width
