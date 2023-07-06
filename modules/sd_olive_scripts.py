@@ -4,6 +4,7 @@
 # --------------------------------------------------------------------------
 import os
 import torch
+import safetensors.torch
 from diffusers import AutoencoderKL, UNet2DConditionModel
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from huggingface_hub import model_info
@@ -32,74 +33,84 @@ def is_lora_model(model_name):
 
 
 # Merges LoRA weights into the layers of a base model
-def merge_lora_weights(base_model, lora_model_id, submodel_name="unet", scale=1.0):
-    from collections import defaultdict
-    from functools import reduce
-
-    from diffusers.loaders import LORA_WEIGHT_NAME
-    from diffusers.models.attention_processor import LoRAAttnProcessor
-    from diffusers.utils import DIFFUSERS_CACHE
-    from diffusers.utils.hub_utils import _get_model_file
-
+def merge_lora_weights(text_encoder: CLIPTextModel, unet: UNet2DConditionModel, lora_model_path: str, ratio=1.0):
     # Load LoRA weights
-    model_file = _get_model_file(
-        lora_model_id,
-        weights_name=LORA_WEIGHT_NAME,
-        cache_dir=DIFFUSERS_CACHE,
-        force_download=False,
-        resume_download=False,
-        proxies=None,
-        local_files_only=False,
-        use_auth_token=None,
-        revision=None,
-        subfolder=None,
-        user_agent={
-            "file_type": "attn_procs_weights",
-            "framework": "pytorch",
-        },
-    )
-    lora_state_dict = torch.load(model_file, map_location="cpu")
-
-    # All keys in the LoRA state dictionary should have 'lora' somewhere in the string.
-    keys = list(lora_state_dict.keys())
-    assert all("lora" in k for k in keys)
-
-    if all(key.startswith(submodel_name) for key in keys):
-        # New format (https://github.com/huggingface/diffusers/pull/2918) supports LoRA weights in both the
-        # unet and text encoder where keys are prefixed with 'unet' or 'text_encoder', respectively.
-        submodel_state_dict = {k: v for k, v in lora_state_dict.items() if k.startswith(submodel_name)}
+    if lora_model_path.split('.')[-1].lower() == "safetensors":
+        lora_state_dict = safetensors.torch.load_file(lora_model_path, device="cpu")
     else:
-        # Old format. Keys will not have any prefix. This only applies to unet, so exit early if this is
-        # optimizing the text encoder.
-        if submodel_name != "unet":
-            return
-        submodel_state_dict = lora_state_dict
+        lora_state_dict = torch.load(lora_model_path, map_location="cpu")
 
-    # Group LoRA weights into attention processors
-    attn_processors = {}
-    lora_grouped_dict = defaultdict(dict)
-    for key, value in submodel_state_dict.items():
-        attn_processor_key, sub_key = ".".join(key.split(".")[:-3]), ".".join(key.split(".")[-3:])
-        lora_grouped_dict[attn_processor_key][sub_key] = value
+    """
+    Merging LoRA
+    kohya-ss/sd-scripts
+    networks/merge_lora.py 37-102
+    https://github.com/kohya-ss/sd-scripts/blob/main/networks/merge_lora.py
+    http://www.apache.org/licenses/LICENSE-2.0
+    Copyright [2022] [kohya-ss]
+    """
+    for key in list(lora_state_dict.keys()):
+        if type(lora_state_dict[key]) == torch.Tensor:
+            lora_state_dict[key] = lora_state_dict[key].to(unet.dtype)
 
-    for key, value_dict in lora_grouped_dict.items():
-        rank = value_dict["to_k_lora.down.weight"].shape[0]
-        cross_attention_dim = value_dict["to_k_lora.down.weight"].shape[1]
-        hidden_size = value_dict["to_k_lora.up.weight"].shape[0]
+    # create module map
+    name_to_module = {}
+    for i, root_module in enumerate([text_encoder, unet]):
+        if i == 0:
+            prefix = "lora_te"
+            target_replace_modules = ["CLIPAttention", "CLIPMLP"]
+        else:
+            prefix = "lora_unet"
+            target_replace_modules = ["Transformer2DModel", "Attention", "ResnetBlock2D", "Downsample2D", "Upsample2D"]
 
-        attn_processors[key] = LoRAAttnProcessor(
-            hidden_size=hidden_size, cross_attention_dim=cross_attention_dim, rank=rank
-        )
-        attn_processors[key].load_state_dict(value_dict)
+        for name, module in root_module.named_modules():
+            if module.__class__.__name__ in target_replace_modules:
+                for child_name, child_module in module.named_modules():
+                    if child_module.__class__.__name__ == "Linear" or child_module.__class__.__name__ == "Conv2d":
+                        lora_name = prefix + "." + name + "." + child_name
+                        lora_name = lora_name.replace(".", "_")
+                        name_to_module[lora_name] = child_module
 
-    # Merge LoRA attention processor weights into existing Q/K/V/Out weights
-    for name, proc in attn_processors.items():
-        attention_name = name[: -len(".processor")]
-        attention = reduce(getattr, attention_name.split(sep="."), base_model)
-        attention.to_q.weight.data += scale * torch.mm(proc.to_q_lora.up.weight, proc.to_q_lora.down.weight)
-        attention.to_k.weight.data += scale * torch.mm(proc.to_k_lora.up.weight, proc.to_k_lora.down.weight)
-        attention.to_v.weight.data += scale * torch.mm(proc.to_v_lora.up.weight, proc.to_v_lora.down.weight)
-        attention.to_out[0].weight.data += scale * torch.mm(proc.to_out_lora.up.weight, proc.to_out_lora.down.weight)
+    for key in lora_state_dict.keys():
+        if "lora_down" in key:
+            up_key = key.replace("lora_down", "lora_up")
+            alpha_key = key[: key.index("lora_down")] + "alpha"
+
+            # find original module for this lora
+            module_name = ".".join(key.split(".")[:-2])  # remove trailing ".lora_down.weight"
+            if module_name not in name_to_module:
+                print(f"no module found for LoRA weight: {key}")
+                continue
+            module = name_to_module[module_name]
+            # print(f"apply {key} to {module}")
+
+            down_weight = lora_state_dict[key]
+            up_weight = lora_state_dict[up_key]
+
+            dim = down_weight.size()[0]
+            alpha = lora_state_dict.get(alpha_key, dim)
+            scale = alpha / dim
+
+            # W <- W + U * D
+            weight = module.weight
+            # print(module_name, down_weight.size(), up_weight.size())
+            if len(weight.size()) == 2:
+                # linear
+                weight = weight + ratio * (up_weight @ down_weight) * scale
+            elif down_weight.size()[2:4] == (1, 1):
+                # conv2d 1x1
+                weight = (
+                    weight
+                    + ratio
+                    * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                    * scale
+                )
+            else:
+                # conv2d 3x3
+                conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+                # print(conved.size(), weight.size(), module.stride, module.padding)
+                weight = weight + ratio * conved * scale
+
+            module.weight = torch.nn.Parameter(weight)
 
 
 # -----------------------------------------------------------------------------
@@ -113,9 +124,16 @@ def text_encoder_inputs(batchsize, torch_dtype):
 
 def text_encoder_load(model_name):
     checkpoint_path = os.environ.get("OLIVE_CKPT_PATH")
+    lora_str = os.environ.get("OLIVE_LORAS")
     model = CLIPTextModel.from_pretrained(checkpoint_path, subfolder="text_encoder")
-    #if is_lora_model(checkpoint_path):
-    #    merge_lora_weights(model, checkpoint_path, "text_encoder")
+    if lora_str is not None:
+        loras: list[str] = lora_str.split('$')
+        unet = UNet2DConditionModel.from_pretrained(checkpoint_path, subfolder="unet")
+        for lora in loras:
+            if lora:
+                filename = lora.split('\\')[-1]
+                print(f"Merging LoRA {filename}...")
+                merge_lora_weights(model, unet, os.path.join(os.environ.get("OLIVE_LORA_BASE_PATH"), lora))
     return model
 
 
@@ -143,9 +161,16 @@ def unet_inputs(batchsize, torch_dtype):
 
 def unet_load(model_name):
     checkpoint_path = os.environ.get("OLIVE_CKPT_PATH")
+    lora_str = os.environ.get("OLIVE_LORAS")
     model = UNet2DConditionModel.from_pretrained(checkpoint_path, subfolder="unet")
-    #if is_lora_model(checkpoint_path):
-    #    merge_lora_weights(model, checkpoint_path, "unet")
+    if lora_str is not None:
+        loras: list[str] = lora_str.split('$')
+        text_encoder = CLIPTextModel.from_pretrained(checkpoint_path, subfolder="text_encoder")
+        for lora in loras:
+            if lora:
+                filename = lora.split('\\')[-1]
+                print(f"Merging LoRA {filename}...")
+                merge_lora_weights(text_encoder, model, os.path.join(os.environ.get("OLIVE_LORA_BASE_PATH"), lora))
     return model
 
 
