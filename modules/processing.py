@@ -606,7 +606,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
             p.override_settings.pop('sd_model_checkpoint', None)
             sd_models.reload_model_weights()
 
-        if cmd_opts.olive:
+        if cmd_opts.onnx:
             return p.process()
 
         for k, v in p.override_settings.items():

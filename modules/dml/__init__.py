@@ -1,46 +1,21 @@
 import torch
-import torch_directml
 
-import modules.dml.hijack
-import modules.dml.amp as amp
+def directml_init():
+    from modules.dml.backend import DirectML # pylint: disable=ungrouped-imports
+    # Alternative of torch.cuda for DirectML.
+    torch.dml = DirectML
 
-from .optimizer.unknown import UnknownOptimizer
+    torch.cuda.is_available = lambda: False
+    torch.cuda.device = torch.dml.device
+    torch.cuda.current_device = torch.dml.current_device
+    torch.cuda.get_device_name = torch.dml.get_device_name
+    torch.cuda.get_device_properties = torch.dml.get_device_properties
 
-class DirectML():
-    _is_autocast_enabled = False
-    _autocast_dtype = torch.float16
-    def get_optimizer(device: torch.device):
-        assert device.type == 'privateuseone'
-        try:
-            device_name = torch_directml.device_name(device.index)
-            if 'NVIDIA' in device_name or 'GeForce' in device_name:
-                from .optimizer.nvidia import nVidiaOptimizer as optimizer
-            elif 'AMD' in device_name or 'Radeon' in device_name:
-                from .optimizer.amd import AMDOptimizer as optimizer
-            elif 'Intel' in device_name:
-                from .optimizer.intel import IntelOptimizer as optimizer
-            else:
-                return UnknownOptimizer
-            return optimizer
-        except:
-            return UnknownOptimizer
+    torch.cuda.memory_stats = torch.dml.memory_stats
+    torch.cuda.mem_get_info = torch.dml.mem_get_info
+    torch.cuda.memory_allocated = torch.dml.memory_allocated
+    torch.cuda.max_memory_allocated = torch.dml.max_memory_allocated
+    torch.cuda.reset_peak_memory_stats = torch.dml.reset_peak_memory_stats
 
-    def memory_stats(device: torch.device):
-        optimizer = DirectML.get_optimizer(device)
-        return optimizer.memory_stats(device.index)
-
-    def get_autocast_gpu_dtype():
-        return DirectML._autocast_dtype
-
-    def set_autocast_gpu_dtype(dtype):
-        DirectML._autocast_dtype = dtype
-
-    def is_autocast_enabled():
-        return DirectML._is_autocast_enabled
-
-    def set_autocast_enabled(enabled: bool):
-        DirectML._is_autocast_enabled = enabled
-
-# Alternative of torch.cuda for DirectML.
-DirectML.amp = amp
-torch.dml = DirectML
+def directml_hijack_init():
+    import modules.dml.hijack

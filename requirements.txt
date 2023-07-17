@@ -5,6 +5,7 @@ accelerate
 basicsr
 blendmodes
 clean-fid
+diffusers
 einops
 gfpgan
 gradio==3.32.0

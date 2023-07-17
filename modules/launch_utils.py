@@ -131,6 +131,13 @@ def run_pip(command, desc=None, live=default_command_live):
     return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
 
 
+def run_pip_uninstall(package: str, desc: str = None):
+    if args.skip_install:
+        return
+
+    return run(f'"{python}" -m pip uninstall {package}', desc=f"Uninstalling {desc}", errdesc=f"Couldn't uninstall {desc}")
+
+
 def check_run_python(code: str) -> bool:
     result = subprocess.run([python, "-c", code], capture_output=True, shell=False)
     return result.returncode == 0
@@ -247,6 +254,7 @@ def prepare_environment():
         torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
     
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
+    requirements_file_onnx = os.environ.get('REQS_FILE', "requirements_onnx.txt")
     requirements_file_olive = os.environ.get('REQS_FILE', "requirements_olive.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.20')
@@ -321,6 +329,27 @@ def prepare_environment():
     if not os.path.isfile(requirements_file):
         requirements_file = os.path.join(script_path, requirements_file)
     run_pip(f"install -r \"{requirements_file}\"", "requirements")
+
+    if args.onnx or args.olive:
+        run_pip(f"install -r \"{requirements_file_onnx}\"", "requirements for ONNX")
+        try:
+            import onnxruntime
+            attr_check = onnxruntime.SessionOptions
+        except AttributeError:
+            print("Failed to load SessionOptions. Reinstall onnxruntime & onnxruntime for GPU.")
+            run_pip_uninstall("onnxruntime", "onnxruntime")
+            if args.backend == "directml":
+                run_pip_uninstall("onnxruntime-directml", "onnxruntime-directml")
+            else:
+                run_pip_uninstall("onnxruntime-gpu", "onnxruntime-gpu")
+        except ImportError:
+            pass
+        run_pip("install --no-deps onnxruntime", "onnxruntime")
+        if "onnx" not in args.use_cpu:
+            if args.backend == "directml":
+                run_pip("install --no-deps onnxruntime-directml", "onnxruntime-directml")
+            else:
+                run_pip("install --no-deps onnxruntime-gpu", "onnxruntime-gpu")
 
     if args.olive:
         if args.backend != 'directml':

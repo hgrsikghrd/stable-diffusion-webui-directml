@@ -1,8 +1,8 @@
 from abc import *
 from typing import *
 
-class Optimizer(metaclass=ABCMeta):
+class MemoryControl(metaclass=ABCMeta):
     driver: Any = None
     @abstractmethod
-    def memory_stats(index: int) -> Tuple[int, int]:
+    def mem_get_info(index: int) -> Tuple[int, int]:
         pass

@@ -19,8 +19,10 @@ from modules.sd_hijack_inpainting import do_inpainting_hijack
 from modules.timer import Timer
 import tomesd
 
-model_dir = "ONNX-Olive" if shared.cmd_opts.olive else "Stable-diffusion"
+model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(paths.models_path, model_dir))
+onnx_model_dir = "ONNX-Olive" if shared.cmd_opts.olive else "ONNX"
+onnx_model_path = os.path.abspath(os.path.join(paths.models_path, onnx_model_dir))
 
 checkpoints_list = {}
 checkpoint_alisases = {}
@@ -45,9 +47,9 @@ class CheckpointInfo:
         self.name = name
         self.name_for_extra = os.path.splitext(os.path.basename(filename))[0]
         self.model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
-        self.hash = model_hash(filename) if not shared.cmd_opts.olive else None
+        self.hash = model_hash(filename) if not shared.cmd_opts.onnx else None
 
-        self.sha256 = hashes.sha256_from_cache(self.filename, f"checkpoint/{name}") if not shared.cmd_opts.olive else None
+        self.sha256 = hashes.sha256_from_cache(self.filename, f"checkpoint/{name}") if not shared.cmd_opts.onnx else None
         self.shorthash = self.sha256[0:10] if self.sha256 else None
 
         self.title = name if self.shorthash is None else f'{name} [{self.shorthash}]'
@@ -69,7 +71,7 @@ class CheckpointInfo:
             checkpoint_alisases[id] = self
 
     def calculate_shorthash(self):
-        if shared.cmd_opts.olive:
+        if shared.cmd_opts.onnx:
             return
         
         self.sha256 = hashes.sha256(self.filename, f"checkpoint/{self.name}")
@@ -123,8 +125,8 @@ def list_models():
     else:
         model_url = "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors"
 
-    if shared.cmd_opts.olive:
-        model_list = [f for f in listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+    if shared.cmd_opts.onnx:
+        model_list = [f for f in listdir(onnx_model_path) if os.path.isdir(os.path.join(onnx_model_path, f))]
     else:
         model_list = modelloader.load_models(model_path=model_path, model_url=model_url, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt", ".safetensors"], download_name="v1-5-pruned-emaonly.safetensors", ext_blacklist=[".vae.ckpt", ".vae.safetensors"])
 
@@ -441,10 +443,10 @@ class SdModelData:
 model_data = SdModelData()
 
 
-def load_olive_optimized_model(checkpoint_info: CheckpointInfo, already_loaded_state_dict=None):
-    from modules.sd_olive import OliveOptimizedModel
+def load_onnx_model(checkpoint_info: CheckpointInfo, already_loaded_state_dict=None):
+    from modules.sd_onnx import SdONNXModel
 
-    sd_model = OliveOptimizedModel(checkpoint_info.name)
+    sd_model = SdONNXModel(checkpoint_info.name, is_optimized=shared.cmd_opts.olive)
 
     model_data.set_sd_model(sd_model)
     print(f"Model {model_data.sd_model.dirname} loaded.")
@@ -456,8 +458,8 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
     from modules import lowvram, sd_hijack
     checkpoint_info = checkpoint_info or select_checkpoint()
 
-    if shared.cmd_opts.olive:
-        return load_olive_optimized_model(checkpoint_info, already_loaded_state_dict=already_loaded_state_dict)
+    if shared.cmd_opts.onnx:
+        return load_onnx_model(checkpoint_info, already_loaded_state_dict=already_loaded_state_dict)
 
     if model_data.sd_model:
         sd_hijack.model_hijack.undo_hijack(model_data.sd_model)
@@ -543,7 +545,7 @@ def reload_model_weights(sd_model=None, info=None):
     if not sd_model:
         sd_model = model_data.sd_model
 
-    if shared.cmd_opts.olive:
+    if shared.cmd_opts.onnx:
         load_model(checkpoint_info)
         return model_data.sd_model
 
@@ -602,7 +604,7 @@ def unload_model_weights(sd_model=None, info=None):
     from modules import devices, sd_hijack
     timer = Timer()
 
-    if shared.cmd_opts.olive:
+    if shared.cmd_opts.onnx:
         return sd_model
 
     if model_data.sd_model:

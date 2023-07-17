@@ -1128,7 +1128,7 @@ def create_ui():
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
 
     if shared.cmd_opts.olive:
-        from modules.sd_olive import optimize_from_ckpt, optimize_from_onnx, available_sampling_methods
+        from modules.sd_olive_ui import optimize_from_ckpt, optimize_from_onnx, available_sampling_methods
         with gr.Blocks(analytics_enabled=False) as olive_interface:
             with gr.Row().style(equal_height=False):
                 with gr.Column(variant='panel'):
