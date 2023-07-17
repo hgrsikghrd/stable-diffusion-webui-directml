@@ -458,14 +458,15 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
     from modules import lowvram, sd_hijack
     checkpoint_info = checkpoint_info or select_checkpoint()
 
-    if shared.cmd_opts.onnx:
-        return load_onnx_model(checkpoint_info, already_loaded_state_dict=already_loaded_state_dict)
-
     if model_data.sd_model:
-        sd_hijack.model_hijack.undo_hijack(model_data.sd_model)
+        if not shared.cmd_opts.onnx:
+            sd_hijack.model_hijack.undo_hijack(model_data.sd_model)
         model_data.sd_model = None
         gc.collect()
         devices.torch_gc()
+
+    if shared.cmd_opts.onnx:
+        return load_onnx_model(checkpoint_info, already_loaded_state_dict=already_loaded_state_dict)
 
     do_inpainting_hijack()
 

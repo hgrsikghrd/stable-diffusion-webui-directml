@@ -381,8 +381,8 @@ class SdONNXProcessingTxt2Img:
             images.save_image(image, self.outpath_samples, "")
             output_images.append(image)
 
-            devices.torch_gc()
             del result
+            devices.torch_gc()
 
         index_of_first_image = 0
         unwanted_grid_because_of_img_count = len(output_images) < 2 and shared.opts.grid_only_if_multiple
