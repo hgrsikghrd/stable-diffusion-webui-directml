@@ -330,6 +330,9 @@ def prepare_environment():
         requirements_file = os.path.join(script_path, requirements_file)
     run_pip(f"install -r \"{requirements_file}\"", "requirements")
 
+    if not is_installed("diffusers"):
+        run_pip("install diffusers", "diffusers")
+
     if args.onnx or args.olive:
         run_pip(f"install -r \"{requirements_file_onnx}\"", "requirements for ONNX")
         try:

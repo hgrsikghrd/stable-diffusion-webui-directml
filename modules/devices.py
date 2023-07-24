@@ -41,7 +41,7 @@ def get_dml_device_string():
 
     if shared.cmd_opts.device_id is not None:
         return f"privateuseone:{shared.cmd_opts.device_id}"
-    return "privateuseone:0"
+    return torch.dml.get_device_string(torch.dml.default_device())
 
 
 def get_optimal_device_name():

@@ -1,18 +1,22 @@
+import gc
 import torch
 import numpy as np
 import inspect
+import diffusers
 from pathlib import Path
 import onnxruntime as ort
-from diffusers import OnnxStableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.pipelines.onnx_utils import ORT_TO_NP_TYPE
 
 from modules import shared, images, devices
+from modules.sd_models import reload_model_weights
+from modules.sd_samplers import find_sampler_config
+from modules.sd_samplers_common import SamplerData
 from modules.paths_internal import models_path
 from modules.processing import Processed, get_fixed_seed
 
 def __call__(
-    self: OnnxStableDiffusionPipeline,
+    self: diffusers.OnnxStableDiffusionPipeline,
     p,
     prompt = None,
     height = 512,
@@ -161,34 +165,59 @@ def __call__(
         return (image, has_nsfw_concept)
 
     return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
-OnnxStableDiffusionPipeline.__call__ = __call__
+diffusers.OnnxStableDiffusionPipeline.__call__ = __call__
 
 class SdONNXModel:
     dirname: str
     is_optimized: bool
     path: Path
     sess_options: ort.SessionOptions
-    pipeline: OnnxStableDiffusionPipeline
-    sd_model_hash: None
-    cond_stage_key: str
-    vae: None
+    sd_model_hash: None = None
+    cond_stage_model: None = None
+    cond_stage_key: str = ""
+    vae: None = None
+
+    dtype: torch.dtype = devices.dtype
+    device: torch.device = devices.device
 
     def __init__(self, dirname: str, is_optimized: bool = False):
         self.dirname = dirname
         self.is_optimized = is_optimized
         self.path = Path(models_path) / ("ONNX-Olive" if self.is_optimized else "ONNX") / dirname
-        provider_options = dict()
-        if shared.cmd_opts.device_id is not None:
-            provider_options["device_id"] = shared.cmd_opts.device_id
         self.sess_options = ort.SessionOptions()
-        self.pipeline = OnnxStableDiffusionPipeline.from_pretrained(
-            self.path, provider=("DmlExecutionProvider" if shared.cmd_opts.backend == "directml" else "CUDAExecutionProvider", provider_options), sess_options=self.sess_options, local_files_only=True
+        self.sess_options.add_free_dimension_override_by_name("unet_sample_channels", 4)
+        self.sess_options.add_free_dimension_override_by_name("unet_time_batch", 1)
+        self.sess_options.add_free_dimension_override_by_name("unet_hidden_sequence", 77)
+    
+    def to(self, *args, **kwargs) -> diffusers.OnnxStableDiffusionPipeline:
+        for arg in args:
+            if isinstance(arg, torch.dtype):
+                self.dtype = arg
+            if isinstance(arg, torch.device):
+                self.device = arg
+
+        for key in kwargs:
+            if key == "dtype":
+                self.dtype = kwargs[key]
+            if key == "device":
+                self.device = kwargs[key]
+
+    def create_pipeline(self, sampler: SamplerData) -> diffusers.OnnxStableDiffusionPipeline:
+        provider_options = dict()
+        provider_options["device_id"] = self.device.index
+        return diffusers.OnnxStableDiffusionPipeline.from_pretrained(
+            self.path,
+            provider=("DmlExecutionProvider" if shared.cmd_opts.backend == "directml" else "CUDAExecutionProvider", provider_options),
+            scheduler=sampler.constructor.from_pretrained(self.path, subfolder="scheduler"),
+            sess_options=self.sess_options,
+            local_files_only=True,
+            torch_dtype=self.dtype,
+            offload_state_dict=shared.opts.offload_state_dict,
         )
-        self.sd_model_hash = None
-        self.cond_stage_key = ""
 
 class SdONNXProcessingTxt2Img:
     sd_model: SdONNXModel
+    pipeline: diffusers.OnnxStableDiffusionPipeline
     outpath_samples: str
     outpath_grids: str
     prompt: str
@@ -213,7 +242,7 @@ class SdONNXProcessingTxt2Img:
     do_not_save_grid: bool
     extra_generation_params: dict
 
-    def __init__(self, sd_model = None, outpath_samples = None, outpath_grids = None, prompt: str = "", styles = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_name: str = None, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params = None, overlay_images = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, ddim_discretize: str = None, s_min_uncond: float = 0.0, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, override_settings = None, override_settings_restore_afterwards: bool = True, sampler_index: int = None, script_args: list = None, enable_hr: bool = False, denoising_strength: float = 0.75, firstphase_width: int = 0, firstphase_height: int = 0, hr_scale: float = 2.0, hr_upscaler: str = None, hr_second_pass_steps: int = 0, hr_resize_x: int = 0, hr_resize_y: int = 0, hr_sampler_name: str = None, hr_prompt: str = '', hr_negative_prompt: str = ''):
+    def __init__(self, sd_model: SdONNXModel, outpath_samples = None, outpath_grids = None, prompt: str = "", styles = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_name: str = None, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params = None, overlay_images = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, ddim_discretize: str = None, s_min_uncond: float = 0.0, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, override_settings = None, override_settings_restore_afterwards: bool = True, sampler_index: int = None, script_args: list = None, enable_hr: bool = False, denoising_strength: float = 0.75, firstphase_width: int = 0, firstphase_height: int = 0, hr_scale: float = 2.0, hr_upscaler: str = None, hr_second_pass_steps: int = 0, hr_resize_x: int = 0, hr_resize_y: int = 0, hr_sampler_name: str = None, hr_prompt: str = '', hr_negative_prompt: str = ''):
         self.sd_model: SdONNXModel = sd_model
         self.outpath_samples: str = outpath_samples
         self.outpath_grids: str = outpath_grids
@@ -272,7 +301,9 @@ class SdONNXProcessingTxt2Img:
         self.all_subseeds = None
         self.iteration = 0
         self.is_hr_pass = False
-        self.sampler = None
+        self.sampler = find_sampler_config(self.sampler_name)
+        if self.sampler is None:
+            raise Exception("Unknown sampler.")
 
         self.prompts = None
         self.negative_prompts = None
@@ -333,20 +364,21 @@ class SdONNXProcessingTxt2Img:
         self.hr_c = None
         self.hr_uc = None
 
-        self.sd_model.sess_options.enable_mem_pattern = False
+        self.sd_model.sess_options.enable_mem_pattern = shared.opts.enable_mem_pattern
+        self.sd_model.sess_options.enable_mem_reuse = shared.opts.enable_mem_reuse
         self.sd_model.sess_options.add_free_dimension_override_by_name("unet_sample_batch", self.batch_size * 2)
-        self.sd_model.sess_options.add_free_dimension_override_by_name("unet_sample_channels", 4)
-        self.sd_model.sess_options.add_free_dimension_override_by_name("unet_time_batch", 1)
         self.sd_model.sess_options.add_free_dimension_override_by_name("unet_hidden_batch", self.batch_size * 2)
-        self.sd_model.sess_options.add_free_dimension_override_by_name("unet_hidden_sequence", 77)
+        if not shared.opts.reload_model_before_each_generation:
+            self.pipeline = self.sd_model.create_pipeline(self.sampler)
 
-    def process(self) -> Processed:
+    def __call__(self) -> Processed:
         if type(self.prompt) == list:
             assert(len(self.prompt) > 0)
         else:
             assert self.prompt is not None
 
-        devices.torch_gc()
+        gc.collect()
+        torch.cuda.empty_cache()
 
         seed = get_fixed_seed(self.seed)
         subseed = get_fixed_seed(self.subseed)
@@ -367,22 +399,31 @@ class SdONNXProcessingTxt2Img:
         output_images = []
 
         for i in range(0, self.n_iter):
-            result = self.sd_model.pipeline(self,
+            if shared.opts.reload_model_before_each_generation:
+                self.sd_model = None
+                self.pipeline = None
+                gc.collect()
+                torch.cuda.empty_cache()
+                self.sd_model = reload_model_weights()
+                self.pipeline = self.sd_model.create_pipeline(self.sampler)
+            result = self.pipeline(self,
                 prompt=self.all_prompts,
                 negative_prompt=self.all_negative_prompts,
                 num_inference_steps=self.steps,
                 height=self.height,
                 width=self.width,
                 #eta=self.eta,
-                seed=seed,
+                seed=seed + i,
             )
-            seed += 1
             image = result.images[0]
             images.save_image(image, self.outpath_samples, "")
             output_images.append(image)
 
-            del result
-            devices.torch_gc()
+            result.images = None
+            result = None
+            image = None
+            gc.collect()
+            torch.cuda.empty_cache()
 
         index_of_first_image = 0
         unwanted_grid_because_of_img_count = len(output_images) < 2 and shared.opts.grid_only_if_multiple
@@ -396,7 +437,8 @@ class SdONNXProcessingTxt2Img:
             if shared.opts.grid_save:
                 images.save_image(grid, self.outpath_grids, "grid", self.all_seeds[0], self.all_prompts[0], shared.opts.grid_format, short_filename=not shared.opts.grid_extended_filename, grid=True)
 
-        devices.torch_gc()
+        gc.collect()
+        torch.cuda.empty_cache()
 
         return Processed(
             self,

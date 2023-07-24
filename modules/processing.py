@@ -607,7 +607,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
             sd_models.reload_model_weights()
 
         if cmd_opts.onnx:
-            return p.process()
+            return p()
 
         for k, v in p.override_settings.items():
             setattr(opts, k, v)

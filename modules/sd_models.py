@@ -605,12 +605,10 @@ def unload_model_weights(sd_model=None, info=None):
     from modules import devices, sd_hijack
     timer = Timer()
 
-    if shared.cmd_opts.onnx:
-        return sd_model
-
     if model_data.sd_model:
         model_data.sd_model.to(devices.cpu)
-        sd_hijack.model_hijack.undo_hijack(model_data.sd_model)
+        if not shared.cmd_opts.onnx:
+            sd_hijack.model_hijack.undo_hijack(model_data.sd_model)
         model_data.sd_model = None
         sd_model = None
         gc.collect()

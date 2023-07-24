@@ -3,16 +3,20 @@ import json
 import torch
 import shutil
 from pathlib import Path
-from diffusers import OnnxRuntimeModel, OnnxStableDiffusionPipeline, StableDiffusionPipeline
+from diffusers import OnnxRuntimeModel, OnnxStableDiffusionPipeline, StableDiffusionPipeline, StableDiffusionXLPipeline
 from olive.model import ONNXModel
 from olive.workflows import run as olive_run
 
 from modules import shared
 from modules.paths_internal import sd_configs_path, models_path
+from modules.sd_models import unload_model_weights
+from modules.sd_onnx_xl import OnnxStableDiffusionXLPipeline
 
 available_sampling_methods = ["pndm", "lms", "heun", "euler", "euler-ancestral", "dpm", "ddim"]
 
-def optimize_from_ckpt(checkpoint: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, scheduler_type: str, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
+def optimize_from_ckpt(checkpoint: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, text_encoder_2: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, scheduler_type: str, use_fp16: bool, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
+    unload_model_weights()
+    
     unoptimized_dir = Path(models_path) / "ONNX" / unoptimized_dir
     optimized_dir = Path(models_path) / "ONNX-Olive" / optimized_dir
     
@@ -20,41 +24,48 @@ def optimize_from_ckpt(checkpoint: str, vae_id: str, vae_subfolder: str, unoptim
     shutil.rmtree(unoptimized_dir, ignore_errors=True)
     shutil.rmtree(optimized_dir, ignore_errors=True)
 
-    pipeline = StableDiffusionPipeline.from_ckpt(os.path.join(models_path, "Stable-diffusion", checkpoint), torch_dtype=torch.float32, requires_safety_checker=False, scheduler_type=scheduler_type)
+    pipeline = StableDiffusionPipeline.from_single_file(os.path.join(models_path, "Stable-diffusion", checkpoint), torch_dtype=torch.float32, requires_safety_checker=False, scheduler_type=scheduler_type)
     pipeline.save_pretrained(unoptimized_dir)
 
-    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width, olive_merge_lora, *olive_merge_lora_inputs)
+    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, text_encoder_2, unet, vae_decoder, vae_encoder, use_fp16, sample_height, sample_width, olive_merge_lora, *olive_merge_lora_inputs)
 
-def optimize_from_onnx(model_id: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
+def optimize_from_onnx(model_id: str, vae_id: str, vae_subfolder: str, unoptimized_dir: str, optimized_dir: str, safety_checker: bool, text_encoder: bool, text_encoder_2: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
+    unload_model_weights()
+    
     unoptimized_dir = Path(models_path) / "ONNX" / unoptimized_dir
     optimized_dir = Path(models_path) / "ONNX-Olive" / optimized_dir
     
     shutil.rmtree("footprints", ignore_errors=True)
     shutil.rmtree(optimized_dir, ignore_errors=True)
 
+    constructor = StableDiffusionXLPipeline if text_encoder_2 else StableDiffusionPipeline
     if os.path.isdir(unoptimized_dir):
-        pipeline = StableDiffusionPipeline.from_pretrained(unoptimized_dir, torch_dtype=torch.float32, requires_safety_checker=False)
+        pipeline = constructor.from_pretrained(unoptimized_dir, torch_dtype=torch.float32, requires_safety_checker=False, local_files_only=True)
     else:
-        pipeline = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32, requires_safety_checker=False)
+        pipeline = constructor.from_pretrained(model_id, torch_dtype=torch.float32, requires_safety_checker=False)
         pipeline.save_pretrained(unoptimized_dir)
 
-    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, unet, vae_decoder, vae_encoder, use_fp16, sample_height_dim, sample_width_dim, sample_height, sample_width, olive_merge_lora, *olive_merge_lora_inputs)
+    optimize(unoptimized_dir, optimized_dir, pipeline, vae_id, vae_subfolder, safety_checker, text_encoder, text_encoder_2, unet, vae_decoder, vae_encoder, use_fp16, sample_height, sample_width, olive_merge_lora, *olive_merge_lora_inputs)
 
-def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, vae_subfolder: str, safety_checker: bool, text_encoder: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height_dim: int, sample_width_dim: int, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
+def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, vae_subfolder: str, safety_checker: bool, text_encoder: bool, text_encoder_2: bool, unet: bool, vae_decoder: bool, vae_encoder: bool, use_fp16: bool, sample_height: int, sample_width: int, olive_merge_lora: bool, *olive_merge_lora_inputs):
     model_info = {}
     submodels = []
 
     if safety_checker:
-        submodels += ["safety_checker"]
+        submodels.append("safety_checker")
     if text_encoder:
-        submodels += ["text_encoder"]
+        submodels.append("text_encoder")
+    if text_encoder_2:
+        submodels.append("text_encoder_2")
     if unet:
-        submodels += ["unet"]
+        submodels.append("unet")
     if vae_decoder:
-        submodels += ["vae_decoder"]
+        submodels.append("vae_decoder")
     if vae_encoder:
-        submodels += ["vae_encoder"]
+        submodels.append("vae_encoder")
 
+    sample_height_dim = sample_height // 8
+    sample_width_dim = sample_width // 8
     os.environ["OLIVE_CKPT_PATH"] = str(unoptimized_dir)
     os.environ["OLIVE_VAE"] = vae_id or str(unoptimized_dir)
     os.environ["OLIVE_VAE_SUBFOLDER"] = vae_subfolder
@@ -106,7 +117,19 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, 
             print(f"Optimized {submodel_name}")
 
     print("\nCreating ONNX pipeline...")
-    onnx_pipeline = OnnxStableDiffusionPipeline(
+    onnx_pipeline = OnnxStableDiffusionXLPipeline(
+        vae_encoder=OnnxRuntimeModel.from_pretrained(model_info["vae_encoder"]["unoptimized"]["path"].parent),
+        vae_decoder=OnnxRuntimeModel.from_pretrained(model_info["vae_decoder"]["unoptimized"]["path"].parent),
+        text_encoder=OnnxRuntimeModel.from_pretrained(model_info["text_encoder"]["unoptimized"]["path"].parent),
+        text_encoder_2=OnnxRuntimeModel.from_pretrained(model_info["text_encoder_2"]["unoptimized"]["path"].parent),
+        tokenizer=pipeline.tokenizer,
+        tokenizer_2=pipeline.tokenizer_2,
+        unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
+        scheduler=pipeline.scheduler,
+        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent) if safety_checker else None,
+        feature_extractor=pipeline.feature_extractor,
+        requires_safety_checker=False,
+    ) if text_encoder_2 else OnnxStableDiffusionPipeline(
         vae_encoder=OnnxRuntimeModel.from_pretrained(model_info["vae_encoder"]["unoptimized"]["path"].parent),
         vae_decoder=OnnxRuntimeModel.from_pretrained(model_info["vae_decoder"]["unoptimized"]["path"].parent),
         text_encoder=OnnxRuntimeModel.from_pretrained(model_info["text_encoder"]["unoptimized"]["path"].parent),

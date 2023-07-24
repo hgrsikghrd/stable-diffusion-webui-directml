@@ -15,7 +15,7 @@ import modules.styles
 import modules.devices as devices
 from modules import localization, script_loading, errors, ui_components, shared_items, cmd_args
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir  # noqa: F401
-from modules.dml import directml_init, directml_hijack_init
+from modules.dml import directml_init, directml_do_hijack
 from ldm.models.diffusion.ddpm import LatentDiffusion
 from typing import Optional
 
@@ -63,6 +63,8 @@ gradio_hf_hub_themes = [
 cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or cmd_opts.server_name) and not cmd_opts.enable_insecure_extension_access
 if cmd_opts.olive:
     cmd_opts.onnx = True
+if cmd_opts.backend == "directml":
+    directml_init()
 
 
 devices.device, devices.device_interrogate, devices.device_gfpgan, devices.device_esrgan, devices.device_codeformer = \
@@ -85,9 +87,7 @@ loaded_hypernetworks = []
 
 
 if cmd_opts.backend == 'directml':
-    directml_hijack_init()
-if device.type == 'privateuseone':
-    directml_init()
+    directml_do_hijack()
 
 
 def reload_hypernetworks():
@@ -422,6 +422,13 @@ options_templates.update(options_section(('sd', "Stable Diffusion"), {
     "CLIP_stop_at_last_layers": OptionInfo(1, "Clip skip", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}).link("wiki", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Features#clip-skip").info("ignore last layers of CLIP network; 1 ignores none, 2 ignores one layer"),
     "upcast_attn": OptionInfo(False, "Upcast cross attention layer to float32"),
     "randn_source": OptionInfo("GPU", "Random number generator source.", gr.Radio, {"choices": ["GPU", "CPU"]}).info("changes seeds drastically; use CPU to produce the same picture across different videocard vendors"),
+}))
+
+options_templates.update(options_section(('onnx', "ONNX Runtime"), {
+    "enable_mem_pattern": OptionInfo(True, "Enable the memory pattern optimization."),
+    "enable_mem_reuse": OptionInfo(True, "Enable the memory reuse optimization."),
+    "reload_model_before_each_generation": OptionInfo(False, "Reload model before each generation."),
+    "offload_state_dict": OptionInfo(False, "Offload state dict."),
 }))
 
 options_templates.update(options_section(('optimizations', "Optimizations"), {
