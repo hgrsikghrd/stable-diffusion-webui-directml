@@ -66,6 +66,7 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, 
 
     sample_height_dim = sample_height // 8
     sample_width_dim = sample_width // 8
+    os.environ["OLIVE_IS_SDXL"] = str(int(text_encoder_2))
     os.environ["OLIVE_CKPT_PATH"] = str(unoptimized_dir)
     os.environ["OLIVE_VAE"] = vae_id or str(unoptimized_dir)
     os.environ["OLIVE_VAE_SUBFOLDER"] = vae_subfolder

@@ -173,7 +173,7 @@ class SdONNXModel:
     path: Path
     sess_options: ort.SessionOptions
     sd_model_hash: None = None
-    cond_stage_model: None = None
+    cond_stage_model: torch.nn.Module = torch.nn.Module()
     cond_stage_key: str = ""
     vae: None = None
 

@@ -190,18 +190,18 @@ def unet_inputs(batchsize, torch_dtype, is_conversion_inputs=False):
         "encoder_hidden_states": torch.rand((batchsize, 77, 512 + 256), dtype=torch_dtype),
         "return_dict": False,
     }
-    '''
-    if is_conversion_inputs:
-        inputs["additional_inputs"] = {
-            "added_cond_kwargs": {
-                "text_embeds": torch.rand((1, 1280), dtype=torch_dtype),
-                "time_ids": torch.rand((1, 5), dtype=torch_dtype),
+    
+    if bool(os.environ.get("OLIVE_IS_SDXL", False)):
+        if is_conversion_inputs:
+            inputs["additional_inputs"] = {
+                "added_cond_kwargs": {
+                    "text_embeds": torch.rand((1, 1280), dtype=torch_dtype),
+                    "time_ids": torch.rand((1, 5), dtype=torch_dtype),
+                }
             }
-        }
-    else:
-        inputs["onnx::Concat_4"] = torch.rand((1, 1280), dtype=torch_dtype)
-        inputs["onnx::Shape_5"] = torch.rand((1, 5), dtype=torch_dtype)
-    '''
+        else:
+            inputs["onnx::Concat_4"] = torch.rand((1, 1280), dtype=torch_dtype)
+            inputs["onnx::Shape_5"] = torch.rand((1, 5), dtype=torch_dtype)
 
     return inputs
 
