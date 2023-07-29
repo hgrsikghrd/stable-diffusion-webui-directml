@@ -13,9 +13,9 @@ class DirectML:
     amp = amp
     device = device
 
-    context_device: torch.device | None = None
+    context_device: Optional[torch.device] = None
 
-    __gpu_memory_bound: int | None = None
+    __gpu_memory_bound: Optional[int] = None
     
     is_autocast_enabled = False
     autocast_gpu_dtype = torch.float16
@@ -36,7 +36,7 @@ class DirectML:
         except Exception:
             return UnknownMemoryControl
         
-    def set_gpu_memory_bound(bound: int | None):
+    def set_gpu_memory_bound(bound: Optional[int]):
         DirectML.__gpu_memory_bound = bound
 
     def is_available() -> bool:

@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from transformers import CLIPImageProcessor, CLIPTokenizer
 
-from diffusers.image_processor import VaeImageProcessor
 from diffusers.pipelines.onnx_utils import ORT_TO_NP_TYPE
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers import OnnxStableDiffusionPipeline, OnnxRuntimeModel, DiffusionPipeline, DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
@@ -131,8 +130,8 @@ class OnnxStableDiffusionXLPipeline(OnnxStableDiffusionPipeline):
         # get unconditional embeddings for classifier free guidance
         zero_out_negative_prompt = negative_prompt is None and self.config.force_zeros_for_empty_prompt
         if do_classifier_free_guidance and negative_prompt_embeds is None and zero_out_negative_prompt:
-            negative_prompt_embeds = torch.zeros_like(prompt_embeds)
-            negative_pooled_prompt_embeds = torch.zeros_like(pooled_prompt_embeds)
+            negative_prompt_embeds = np.zeros_like(prompt_embeds)
+            negative_pooled_prompt_embeds = np.zeros_like(pooled_prompt_embeds)
         elif do_classifier_free_guidance and negative_prompt_embeds is None:
             negative_prompt = negative_prompt or ""
             uncond_tokens: List[str]

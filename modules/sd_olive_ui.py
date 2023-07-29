@@ -118,26 +118,25 @@ def optimize(unoptimized_dir: Path, optimized_dir: Path, pipeline, vae_id: str, 
             print(f"Optimized {submodel_name}")
 
     print("\nCreating ONNX pipeline...")
-    onnx_pipeline = OnnxStableDiffusionXLPipeline(
-        vae_encoder=OnnxRuntimeModel.from_pretrained(model_info["vae_encoder"]["unoptimized"]["path"].parent),
-        vae_decoder=OnnxRuntimeModel.from_pretrained(model_info["vae_decoder"]["unoptimized"]["path"].parent),
-        text_encoder=OnnxRuntimeModel.from_pretrained(model_info["text_encoder"]["unoptimized"]["path"].parent),
-        text_encoder_2=OnnxRuntimeModel.from_pretrained(model_info["text_encoder_2"]["unoptimized"]["path"].parent),
+    kwargs = dict()
+    kwargs["safety_checker"] = None
+    kwargs["text_encoder"] = None
+    kwargs["text_encoder_2"] = None
+    kwargs["unet"] = None
+    kwargs["vae_decoder"] = None
+    kwargs["vae_encoder"] = None
+    for submodel in submodels:
+        kwargs[submodel] = OnnxRuntimeModel.from_pretrained(model_info[submodel]["unoptimized"]["path"].parent)
+
+    onnx_pipeline = OnnxStableDiffusionXLPipeline(**kwargs,
         tokenizer=pipeline.tokenizer,
         tokenizer_2=pipeline.tokenizer_2,
-        unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
         scheduler=pipeline.scheduler,
-        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent) if safety_checker else None,
         feature_extractor=pipeline.feature_extractor,
         requires_safety_checker=False,
-    ) if text_encoder_2 else OnnxStableDiffusionPipeline(
-        vae_encoder=OnnxRuntimeModel.from_pretrained(model_info["vae_encoder"]["unoptimized"]["path"].parent),
-        vae_decoder=OnnxRuntimeModel.from_pretrained(model_info["vae_decoder"]["unoptimized"]["path"].parent),
-        text_encoder=OnnxRuntimeModel.from_pretrained(model_info["text_encoder"]["unoptimized"]["path"].parent),
+    ) if text_encoder_2 else OnnxStableDiffusionPipeline(**kwargs,
         tokenizer=pipeline.tokenizer,
-        unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
         scheduler=pipeline.scheduler,
-        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent) if safety_checker else None,
         feature_extractor=pipeline.feature_extractor,
         requires_safety_checker=False,
     )

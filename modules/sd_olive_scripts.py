@@ -187,7 +187,7 @@ def unet_inputs(batchsize, torch_dtype, is_conversion_inputs=False):
     inputs = {
         "sample": torch.rand((batchsize, 4, int(os.environ.get("OLIVE_SAMPLE_HEIGHT_DIM", 64)), int(os.environ.get("OLIVE_SAMPLE_WIDTH_DIM", 64))), dtype=torch_dtype),
         "timestep": torch.rand((batchsize,), dtype=torch_dtype),
-        "encoder_hidden_states": torch.rand((batchsize, 77, 512 + 256), dtype=torch_dtype),
+        "encoder_hidden_states": torch.rand((batchsize, 77, int(os.environ.get("OLIVE_SAMPLE_HEIGHT", 512)) + 256), dtype=torch_dtype),
         "return_dict": False,
     }
     
@@ -222,7 +222,7 @@ def unet_load(model_name):
 
 
 def unet_conversion_inputs(model):
-    return tuple(unet_inputs(1, torch.float32).values())
+    return tuple(unet_inputs(1, torch.float32, True).values())
 
 
 def unet_data_loader(data_dir, batchsize, *args, **kwargs):
