@@ -35,6 +35,7 @@ from modules.textual_inversion import textual_inversion
 import modules.hypernetworks.ui
 from modules.generation_parameters_copypaste import image_from_url_text
 import modules.extras
+from modules.dml import directml_override_opts
 
 warnings.filterwarnings("default" if opts.show_warnings else "ignore", category=UserWarning)
 
@@ -364,6 +365,7 @@ def apply_setting(key, value):
     if oldval != value and opts.data_labels[key].onchange is not None:
         opts.data_labels[key].onchange()
 
+    directml_override_opts()
     opts.save(shared.config_filename)
     return getattr(opts, key)
 
@@ -1133,12 +1135,51 @@ def create_ui():
                 with gr.Group(elem_id="modelmerger_results_panel"):
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
 
+    if shared.cmd_opts.onnx:
+        from modules.sd_onnx import save_device_map
+        with gr.Blocks(analytics_enabled=False) as onnx_interface:
+            gr.HTML("<h1>Advanced ONNX configuration</h1>")
+
+            with gr.Column(elem_id="onnx_device_map"):
+                onnx_ep_text_encoder = gr.Textbox(label='Execution Provider for Text Encoder', value="DmlExecutionProvider", elem_id="onnx_ep_text_encoder")
+                onnx_id_text_encoder = gr.Textbox(label='Device ID for Text Encoder', value=(shared.cmd_opts.device_id or 0), elem_id="onnx_id_text_encoder")
+                onnx_ep_text_encoder_2 = gr.Textbox(label='Execution Provider for Text Encoder 2', value="DmlExecutionProvider", elem_id="onnx_ep_text_encoder_2")
+                onnx_id_text_encoder_2 = gr.Textbox(label='Device ID for Text Encoder 2', value=(shared.cmd_opts.device_id or 0), elem_id="onnx_id_text_encoder_2")
+                onnx_ep_unet = gr.Textbox(label='Execution Provider for UNet', value="DmlExecutionProvider", elem_id="onnx_ep_unet")
+                onnx_id_unet = gr.Textbox(label='Device ID for UNet', value=(shared.cmd_opts.device_id or 0), elem_id="onnx_id_unet")
+                onnx_ep_vae_decoder = gr.Textbox(label='Execution Provider for VAE Decoder', value="DmlExecutionProvider", elem_id="onnx_ep_vae_decoder")
+                onnx_id_vae_decoder = gr.Textbox(label='Device ID for VAE Decoder', value=(shared.cmd_opts.device_id or 0), elem_id="onnx_id_vae_decoder")
+                onnx_ep_vae_encoder = gr.Textbox(label='Execution Provider for VAE Encoder', value="DmlExecutionProvider", elem_id="onnx_ep_vae_encoder")
+                onnx_id_vae_encoder = gr.Textbox(label='Device ID for VAE Encoder', value=(shared.cmd_opts.device_id or 0), elem_id="onnx_id_vae_encoder")
+
+            button_onnx_device_map = gr.Button(value="Apply", variant='primary', elem_id="button_onnx_device_map")
+            onnx_html = gr.HTML("")
+
+            button_onnx_device_map.click(
+                wrap_gradio_gpu_call(save_device_map, extra_outputs=[""]),
+                inputs=[
+                    onnx_ep_text_encoder, onnx_id_text_encoder,
+                    onnx_ep_text_encoder_2, onnx_id_text_encoder_2,
+                    onnx_ep_unet, onnx_id_unet,
+                    onnx_ep_vae_decoder, onnx_id_vae_decoder,
+                    onnx_ep_vae_encoder, onnx_id_vae_encoder,
+                ],
+                outputs=[onnx_html],
+            )
+
     if shared.cmd_opts.olive:
         from modules.sd_olive_ui import optimize_from_ckpt, optimize_from_onnx, available_sampling_methods
         with gr.Blocks(analytics_enabled=False) as olive_interface:
             with gr.Row().style(equal_height=False):
                 with gr.Column(variant='panel'):
                     with gr.Tabs(elem_id="olive_tabs"):
+                        def onchange(checked: bool):
+                            return (
+                                gr.Slider.update(visible=checked),
+                                gr.Slider.update(visible=not checked),
+                                gr.Slider.update(visible=not checked),
+                            )
+
                         with gr.Tab(label="Optimize checkpoint"):
                             olive_checkpoint = gr.Textbox(label='Checkpoint file name', value="", elem_id="olive_checkpoint", info="Your own checkpoint file name")
                             olive_ckpt_vae = gr.Textbox(label='VAE Source Model ID', value="", elem_id="olive_ckpt_vae", info="The VAE from this model will be used. (empty for default)")
@@ -1147,8 +1188,12 @@ def create_ui():
                             olive_ckpt_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_ckpt_outdir")
 
                             with gr.Column(elem_id="olive_ckpt_res"):
-                                olive_ckpt_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, elem_id="olive_ckpt_sample_height")
-                                olive_ckpt_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, elem_id="olive_ckpt_sample_width")
+                                olive_ckpt_sync_hw = gr.Checkbox(label='Sync height and width (RECOMMENDED)', value=True, elem_id="olive_ckpt_sync_hw")
+                                olive_ckpt_sample_size = gr.Slider(minimum=256, maximum=2048, step=64, label="Image Size", value=512, visible=olive_ckpt_sync_hw.value, elem_id="olive_onnx_sample_size")
+                                olive_ckpt_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, visible=not olive_ckpt_sync_hw.value, elem_id="olive_ckpt_sample_height")
+                                olive_ckpt_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, visible=not olive_ckpt_sync_hw.value, elem_id="olive_ckpt_sample_width")
+
+                                olive_ckpt_sync_hw.change(onchange, inputs=[olive_ckpt_sync_hw], outputs=[olive_ckpt_sample_size, olive_ckpt_sample_height, olive_ckpt_sample_width])
 
                             with FormRow(elem_id="olive_ckpt_submodels", elem_classes="checkboxes-row", variant="compact"):
                                 olive_ckpt_safety_checker = gr.Checkbox(label='Safety Checker', value=True, elem_id="olive_ckpt_safety_checker")
@@ -1163,17 +1208,22 @@ def create_ui():
                                 olive_ckpt_use_fp16 = gr.Checkbox(label='Use half floats', value=True, elem_id="olive_ckpt_use_fp16")
 
                             button_olive_from_ckpt = gr.Button(value="Convert & Optimize checkpoint using Olive", variant='primary', elem_id="olive_optimize_from_ckpt")
+                            olive_html_from_ckpt = gr.HTML("")
 
                         with gr.Tab(label="Optimize ONNX model"):
-                            olive_onnx_model_id = gr.Textbox(label='ONNX Model ID', value="stable-diffusion-v1-5", elem_id="olive_onnx_model_id")
+                            olive_onnx_model_id = gr.Textbox(label='ONNX Model ID', value="runwayml/stable-diffusion-v1-5", elem_id="olive_onnx_model_id")
                             olive_onnx_vae = gr.Textbox(label='VAE Source Model ID', value="", elem_id="olive_onnx_vae", info="The VAE from this model will be used. (empty for default)")
                             olive_onnx_vae_subfolder = gr.Textbox(label='VAE Source Subfolder', value="vae", elem_id="olive_ckpt_vae_subfolder", info="The name of directory which has config and binary of the VAE. (empty for root)")
                             olive_onnx_indir = gr.Textbox(label='Input folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_indir", info="If this folder exists, Olive will load and optimize model from it. Otherwise, download and optimize model on it.")
                             olive_onnx_outdir = gr.Textbox(label='Output folder', value="stable-diffusion-v1-5", elem_id="olive_onnx_outdir")
 
                             with gr.Column(elem_id="olive_onnx_res"):
-                                olive_onnx_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, elem_id="olive_onnx_sample_height")
-                                olive_onnx_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, elem_id="olive_onnx_sample_width")
+                                olive_onnx_sync_hw = gr.Checkbox(label='Sync height and width (RECOMMENDED)', value=True, elem_id="olive_onnx_sync_hw")
+                                olive_onnx_sample_size = gr.Slider(minimum=256, maximum=2048, step=64, label="Image Size", value=512, visible=olive_onnx_sync_hw.value, elem_id="olive_onnx_sample_size")
+                                olive_onnx_sample_height = gr.Slider(minimum=256, maximum=2048, step=64, label="Height", value=512, visible=not olive_onnx_sync_hw.value, elem_id="olive_onnx_sample_height")
+                                olive_onnx_sample_width = gr.Slider(minimum=256, maximum=2048, step=64, label="Width", value=512, visible=not olive_onnx_sync_hw.value, elem_id="olive_onnx_sample_width")
+
+                                olive_onnx_sync_hw.change(onchange, inputs=[olive_onnx_sync_hw], outputs=[olive_onnx_sample_size, olive_onnx_sample_height, olive_onnx_sample_width])
 
                             with FormRow(elem_id="olive_onnx_submodels", elem_classes="checkboxes-row", variant="compact"):
                                 olive_onnx_safety_checker = gr.Checkbox(label='Safety Checker', value=True, elem_id="olive_onnx_safety_checker")
@@ -1187,6 +1237,7 @@ def create_ui():
                                 olive_onnx_use_fp16 = gr.Checkbox(label='Use half floats', value=True, elem_id="olive_onnx_use_fp16")
 
                             button_olive_from_onnx = gr.Button(value="Download & Optimize ONNX model using Olive", variant='primary', elem_id="olive_optimize_from_onnx")
+                            olive_html_from_onnx = gr.HTML("")
 
                         with gr.Tab(label="Merge Extra Networks"):
                             olive_merge_lora = gr.Checkbox(label='Merge LoRA', value=False, elem_id="olive_merge_lora")
@@ -1200,10 +1251,10 @@ def create_ui():
                 inputs=[olive_checkpoint, olive_ckpt_vae, olive_ckpt_vae_subfolder, olive_ckpt_source_dir, olive_ckpt_outdir,
                     olive_ckpt_safety_checker, olive_ckpt_text_encoder, olive_ckpt_text_encoder_2, olive_ckpt_unet, olive_ckpt_vae_decoder, olive_ckpt_vae_encoder,
                     olive_ckpt_sampling_method, olive_ckpt_use_fp16,
-                    olive_ckpt_sample_height, olive_ckpt_sample_width,
+                    olive_ckpt_sample_size if olive_ckpt_sync_hw else (olive_ckpt_sample_height, olive_ckpt_sample_width),
                     olive_merge_lora, *olive_merge_lora_inputs,
                 ],
-                outputs=[],
+                outputs=[olive_html_from_ckpt],
             )
 
             button_olive_from_onnx.click(
@@ -1211,10 +1262,10 @@ def create_ui():
                 inputs=[olive_onnx_model_id, olive_onnx_vae, olive_onnx_vae_subfolder, olive_onnx_indir, olive_onnx_outdir,
                     olive_onnx_safety_checker, olive_onnx_text_encoder, olive_onnx_text_encoder_2, olive_onnx_unet, olive_onnx_vae_decoder, olive_onnx_vae_encoder,
                     olive_onnx_use_fp16,
-                    olive_onnx_sample_height, olive_onnx_sample_width,
+                    olive_onnx_sample_size if olive_onnx_sync_hw else (olive_onnx_sample_height, olive_onnx_sample_width),
                     olive_merge_lora, *olive_merge_lora_inputs,
                 ],
-                outputs=[],
+                outputs=[olive_html_from_onnx],
             )
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
@@ -1548,6 +1599,9 @@ def create_ui():
         (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
         (train_interface, "Train", "train"),
     ]
+
+    if cmd_opts.onnx:
+        interfaces += [(onnx_interface, "ONNX", "onnx")]
 
     if cmd_opts.olive:
         interfaces += [(olive_interface, "Olive", "olive")]

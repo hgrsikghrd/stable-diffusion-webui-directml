@@ -14,11 +14,11 @@ def txt2img(id_task: str, prompt: str, negative_prompt: str, prompt_styles, step
 
     process = processing.StableDiffusionProcessingTxt2Img
     if cmd_opts.onnx:
-        from modules.sd_onnx import SdONNXProcessingTxt2Img
-        process = SdONNXProcessingTxt2Img
+        from modules.sd_onnx import ONNXStableDiffusionProcessingTxt2Img
+        process = ONNXStableDiffusionProcessingTxt2Img
     if cmd_opts.olive:
-        from modules.sd_olive import SdOptimizedONNXProcessingTxt2Img
-        process = SdOptimizedONNXProcessingTxt2Img
+        from modules.sd_olive import OptimizedONNXStableDiffusionProcessingTxt2Img
+        process = OptimizedONNXStableDiffusionProcessingTxt2Img
     p = process(
         sd_model=shared.sd_model,
         outpath_samples=opts.outdir_samples or opts.outdir_txt2img_samples,

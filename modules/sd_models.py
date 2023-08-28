@@ -74,7 +74,7 @@ class CheckpointInfo:
     def calculate_shorthash(self):
         if shared.cmd_opts.onnx:
             return
-        
+
         self.sha256 = hashes.sha256(self.filename, f"checkpoint/{self.name}")
         if self.sha256 is None:
             return
@@ -461,14 +461,20 @@ model_data = SdModelData()
 
 
 def load_onnx_model(checkpoint_info: CheckpointInfo, already_loaded_state_dict=None):
-    from modules.sd_onnx import SdONNXModel
+    from modules.sd_onnx_models import ONNXStableDiffusionModel
+    from modules.sd_onnx_models_xl import ONNXStableDiffusionXLModel
 
-    sd_model = SdONNXModel(checkpoint_info.name, is_optimized=shared.cmd_opts.olive)
+    constructor = ONNXStableDiffusionXLModel if is_sdxl(checkpoint_info) else ONNXStableDiffusionModel
+    sd_model = constructor(checkpoint_info.name, is_optimized=shared.cmd_opts.olive)
 
     model_data.set_sd_model(sd_model)
     print(f"Model {model_data.sd_model.dirname} loaded.")
 
     return sd_model
+
+
+def is_sdxl(checkpoint_info: CheckpointInfo) -> bool:
+    return os.path.isdir(checkpoint_info.filename) and os.path.isdir(os.path.join(checkpoint_info.filename, "text_encoder_2"))
 
 
 def get_empty_cond(sd_model):

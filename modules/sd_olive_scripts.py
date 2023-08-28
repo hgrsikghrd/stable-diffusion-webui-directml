@@ -8,7 +8,7 @@ import safetensors.torch
 from diffusers import AutoencoderKL, UNet2DConditionModel
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from huggingface_hub import model_info
-from transformers.models.clip.modeling_clip import CLIPTextModel
+from transformers.models.clip.modeling_clip import CLIPTextModel, CLIPTextModelWithProjection
 
 
 # Helper latency-only dataloader that creates random tensors with no label
@@ -112,6 +112,9 @@ def merge_lora_weights(text_encoder: CLIPTextModel, unet: UNet2DConditionModel, 
 
             module.weight = torch.nn.Parameter(weight)
 
+def is_sdxl():
+    return bool(int(os.environ.get("OLIVE_IS_SDXL", False)))
+
 
 # -----------------------------------------------------------------------------
 # TEXT ENCODER
@@ -119,7 +122,11 @@ def merge_lora_weights(text_encoder: CLIPTextModel, unet: UNet2DConditionModel, 
 
 
 def text_encoder_inputs(batchsize, torch_dtype):
-    return torch.zeros((batchsize, 77), dtype=torch_dtype)
+    input_ids = torch.zeros((batchsize, 77), dtype=torch_dtype)
+    return {
+        "input_ids": input_ids,
+        "output_hidden_states": True,
+    } if is_sdxl() else input_ids
 
 
 def text_encoder_load(model_name):
@@ -151,13 +158,16 @@ def text_encoder_data_loader(data_dir, batchsize, *args, **kwargs):
 
 
 def text_encoder_2_inputs(batchsize, torch_dtype):
-    return torch.zeros((batchsize, 77), dtype=torch_dtype)
+    return {
+        "input_ids": torch.zeros((batchsize, 77), dtype=torch_dtype),
+        "output_hidden_states": True,
+    }
 
 
 def text_encoder_2_load(model_name):
     checkpoint_path = os.environ.get("OLIVE_CKPT_PATH")
     lora_str = os.environ.get("OLIVE_LORAS")
-    model = CLIPTextModel.from_pretrained(checkpoint_path, subfolder="text_encoder_2")
+    model = CLIPTextModelWithProjection.from_pretrained(checkpoint_path, subfolder="text_encoder_2")
     if lora_str is not None:
         loras: list[str] = lora_str.split('$')
         unet = UNet2DConditionModel.from_pretrained(checkpoint_path, subfolder="unet")
@@ -170,11 +180,11 @@ def text_encoder_2_load(model_name):
 
 
 def text_encoder_2_conversion_inputs(model):
-    return text_encoder_2_inputs(1, torch.int32)
+    return text_encoder_2_inputs(1, torch.int64)
 
 
 def text_encoder_2_data_loader(data_dir, batchsize, *args, **kwargs):
-    return RandomDataLoader(text_encoder_2_inputs, batchsize, torch.int32)
+    return RandomDataLoader(text_encoder_2_inputs, batchsize, torch.int64)
 
 
 # -----------------------------------------------------------------------------
@@ -183,25 +193,35 @@ def text_encoder_2_data_loader(data_dir, batchsize, *args, **kwargs):
 
 
 def unet_inputs(batchsize, torch_dtype, is_conversion_inputs=False):
-    # TODO: Rename onnx::Concat_4 to text_embeds and onnx::Shape_5 to time_ids
-    inputs = {
-        "sample": torch.rand((batchsize, 4, int(os.environ.get("OLIVE_SAMPLE_HEIGHT_DIM", 64)), int(os.environ.get("OLIVE_SAMPLE_WIDTH_DIM", 64))), dtype=torch_dtype),
-        "timestep": torch.rand((batchsize,), dtype=torch_dtype),
-        "encoder_hidden_states": torch.rand((batchsize, 77, int(os.environ.get("OLIVE_SAMPLE_HEIGHT", 512)) + 256), dtype=torch_dtype),
-        "return_dict": False,
-    }
-    
-    if bool(os.environ.get("OLIVE_IS_SDXL", False)):
+    # TODO (pavignol): All the multiplications by 2 here are bacause the XL base has 2 text encoders
+    # For refiner, it should be multiplied by 1 (single text encoder)
+    height = int(os.environ.get("OLIVE_SAMPLE_HEIGHT", 512))
+    width = int(os.environ.get("OLIVE_SAMPLE_WIDTH", 512))
+
+    if is_sdxl():
+        inputs = {
+            "sample": torch.rand((2 * batchsize, 4, height // 8, width // 8), dtype=torch_dtype),
+            "timestep": torch.rand((1,), dtype=torch_dtype),
+            "encoder_hidden_states": torch.rand((2 * batchsize, 77, height * 2), dtype=torch_dtype),
+        }
+
         if is_conversion_inputs:
             inputs["additional_inputs"] = {
                 "added_cond_kwargs": {
-                    "text_embeds": torch.rand((1, 1280), dtype=torch_dtype),
-                    "time_ids": torch.rand((1, 5), dtype=torch_dtype),
+                    "text_embeds": torch.rand((2 * batchsize, height + 256), dtype=torch_dtype),
+                    "time_ids": torch.rand((2 * batchsize, 6), dtype=torch_dtype),
                 }
             }
         else:
-            inputs["onnx::Concat_4"] = torch.rand((1, 1280), dtype=torch_dtype)
-            inputs["onnx::Shape_5"] = torch.rand((1, 5), dtype=torch_dtype)
+            inputs["text_embeds"] = torch.rand((2 * batchsize, height + 256), dtype=torch_dtype)
+            inputs["time_ids"] = torch.rand((2 * batchsize, 6), dtype=torch_dtype)
+    else:
+        inputs = {
+            "sample": torch.rand((batchsize, 4, height // 8, width // 8), dtype=torch_dtype),
+            "timestep": torch.rand((batchsize,), dtype=torch_dtype),
+            "encoder_hidden_states": torch.rand((batchsize, 77, height + 256), dtype=torch_dtype),
+            "return_dict": False,
+        }
 
     return inputs
 

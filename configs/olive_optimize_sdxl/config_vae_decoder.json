@@ -2,7 +2,7 @@
   "input_model": {
     "type": "PyTorchModel",
     "config": {
-      "model_path": "runwayml/stable-diffusion-v1-5",
+      "model_path": "stabilityai/stable-diffusion-xl-base-1.0",
       "model_loader": "vae_decoder_load",
       "model_script": "modules/sd_olive_scripts.py",
       "io_config": {
@@ -10,8 +10,14 @@
         "output_names": ["sample"],
         "dynamic_axes": {
           "latent_sample": {
-            "0": "batch",
-            "1": "channels",
+            "0": "batch_size",
+            "1": "num_channels_latent",
+            "2": "height_latent",
+            "3": "width_latent"
+          },
+          "sample": {
+            "0": "batch_size",
+            "1": "num_channels",
             "2": "height",
             "3": "width"
           }
@@ -56,9 +62,9 @@
       "disable_search": true,
       "config": {
         "model_type": "vae",
-        "float16": true,
+        "float16": false,
         "use_gpu": true,
-        "keep_io_types": false,
+        "keep_io_types": true,
         "optimization_options": {
           "enable_gelu": true,
           "enable_layer_norm": true,

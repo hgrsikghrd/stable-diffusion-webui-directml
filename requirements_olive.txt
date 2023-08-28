@@ -1,3 +1,15 @@
+accelerate
+diffusers
+numpy
+onnx
+optuna
+optimum
+pandas
+pydantic<2.0.0
+protobuf<4.0.0
+pyyaml
 torch==1.13.1
 torchvision==0.14.1
-protobuf==3.20.3
+torch-directml==0.1.13.1.dev230413
+torchmetrics~=0.10.0
+transformers
