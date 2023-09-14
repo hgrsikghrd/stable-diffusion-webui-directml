@@ -12,6 +12,7 @@ from olive.workflows import run as olive_run
 from modules import shared
 from modules.paths_internal import sd_configs_path, models_path
 from modules.sd_models import unload_model_weights
+from modules.sd_onnx_utils import load_pipeline
 
 available_sampling_methods = ["pndm", "lms", "heun", "euler", "euler-ancestral", "dpm", "ddim"]
 
@@ -43,11 +44,10 @@ def optimize_from_onnx(model_id: str, vae_id: str, vae_subfolder: str, unoptimiz
     shutil.rmtree("footprints", ignore_errors=True)
     shutil.rmtree(optimized_dir, ignore_errors=True)
 
-    constructor = StableDiffusionXLPipeline if text_encoder_2 else StableDiffusionPipeline
     if os.path.isdir(unoptimized_dir):
-        pipeline = constructor.from_pretrained(unoptimized_dir, torch_dtype=torch.float32, requires_safety_checker=False, local_files_only=True)
+        pipeline = load_pipeline(unoptimized_dir, text_encoder_2, torch_dtype=torch.float32, requires_safety_checker=False, local_files_only=True)
     else:
-        pipeline = constructor.from_pretrained(model_id, torch_dtype=torch.float32, requires_safety_checker=False)
+        pipeline = (StableDiffusionXLPipeline if text_encoder_2 else StableDiffusionPipeline).from_pretrained(model_id, torch_dtype=torch.float32, requires_safety_checker=False)
         pipeline.save_pretrained(unoptimized_dir)
 
     hw_synced = isinstance(sample_size, int)

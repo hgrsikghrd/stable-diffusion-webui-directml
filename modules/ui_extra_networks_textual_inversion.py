@@ -10,18 +10,21 @@ class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
         self.allow_negative_prompt = True
 
     def refresh(self):
+        if shared.cmd_opts.backend == "directml":
+            return
         sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)
 
-    def create_item(self, name, index=None):
+    def create_item(self, name, index=None, enable_filter=True):
         embedding = sd_hijack.model_hijack.embedding_db.word_embeddings.get(name)
 
         path, ext = os.path.splitext(embedding.filename)
         return {
             "name": name,
             "filename": embedding.filename,
+            "shorthash": embedding.shorthash,
             "preview": self.find_preview(path),
             "description": self.find_description(path),
-            "search_term": self.search_terms_from_path(embedding.filename),
+            "search_term": self.search_terms_from_path(embedding.filename) + " " + (embedding.hash or ""),
             "prompt": quote_js(embedding.name),
             "local_preview": f"{path}.preview.{shared.opts.samples_format}",
             "sort_keys": {'default': index, **self.get_sort_keys(embedding.filename)},
