@@ -9,6 +9,7 @@ import diffusers
 from transformers import CLIPTokenizer, CLIPImageProcessor
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
+from collections import defaultdict
 from typing import TypeVar, Generic, Union, Any
 from pathlib import Path
 from PIL import Image, ImageOps
@@ -23,11 +24,16 @@ from modules.sd_samplers_common import SamplerData
 
 do_hijack()
 
-device_map = dict()
+device_map = defaultdict(lambda: ("DmlExecutionProvider", {
+    "device_id": int(shared.cmd_opts.device_id or 0)
+}))
 
 T2I = TypeVar("T2I")
 I2I = TypeVar("I2I")
-class BaseONNXModel(Generic[T2I, I2I], WebuiSdModel, metaclass=ABCMeta):
+INP = TypeVar("INP")
+
+
+class BaseONNXModel(Generic[T2I, I2I, INP], WebuiSdModel, metaclass=ABCMeta):
     _sess_options: ort.SessionOptions
 
     filename: str
@@ -41,7 +47,7 @@ class BaseONNXModel(Generic[T2I, I2I], WebuiSdModel, metaclass=ABCMeta):
     sd_checkpoint_info: CheckpointInfo
     cond_stage_model: torch.nn.Module = torch.nn.Module()
     cond_stage_key: str = ""
-    pipeline: diffusers.DiffusionPipeline = None
+    pipeline: Union[diffusers.DiffusionPipeline, None] = None
     vae: None = None
 
     dtype: torch.dtype = devices.dtype
@@ -51,7 +57,7 @@ class BaseONNXModel(Generic[T2I, I2I], WebuiSdModel, metaclass=ABCMeta):
         self.sd_checkpoint_info = ckpt_info
         self.filename = ckpt_info.filename
         self.path = Path(ckpt_info.filename)
-        self.is_optimized = "[Optimized]" in ckpt_info.title
+        self.is_optimized = ckpt_info.is_optimized
         self._sess_options = ort.SessionOptions()
 
     def to(self, *args, **kwargs):
@@ -86,19 +92,43 @@ class BaseONNXModel(Generic[T2I, I2I], WebuiSdModel, metaclass=ABCMeta):
         }
 
     def load_orm(self, submodel: str) -> Union[diffusers.OnnxRuntimeModel, None]:
-        return diffusers.OnnxRuntimeModel.from_pretrained(self.path / submodel, provider=device_map[submodel]) if os.path.isdir(self.path / submodel) else None
+        path = self.path / submodel
+        if not self.sd_checkpoint_info.is_optimized and self.sd_checkpoint_info.optimized_model_info is not None:
+            path = self.sd_checkpoint_info.optimized_model_info[submodel]["optimized"]["path"].parent
+        return diffusers.OnnxRuntimeModel.from_pretrained(
+            path, provider=device_map[submodel]
+        )
+
+    def load_inference_session(self, submodel: str) -> Union[ort.InferenceSession, None]:
+        path = self.path / submodel / "model.onnx"
+        if not self.sd_checkpoint_info.is_optimized and self.sd_checkpoint_info.optimized_model_info is not None:
+            path = self.sd_checkpoint_info.optimized_model_info[submodel]["optimized"]["path"]
+        return diffusers.OnnxRuntimeModel.load_model(
+            path, provider=device_map[submodel]
+        )
 
     def load_tokenizer(self, name: str) -> Union[CLIPTokenizer, None]:
-        return CLIPTokenizer.from_pretrained(self.path / name) if os.path.isdir(self.path / name) else None
+        return (
+            CLIPTokenizer.from_pretrained(self.path / name)
+            if os.path.isdir(self.path / name)
+            else None
+        )
 
     def load_image_processor(self, name: str) -> Union[CLIPImageProcessor, None]:
-        return CLIPImageProcessor.from_pretrained(self.path / name) if os.path.isdir(self.path / name) else None
+        return (
+            CLIPImageProcessor.from_pretrained(self.path / name)
+            if os.path.isdir(self.path / name)
+            else None
+        )
 
     def create_pipeline(self, processing, sampler: SamplerData) -> Union[T2I, I2I]:
         if isinstance(processing, ONNXStableDiffusionProcessingTxt2Img):
             return self.create_txt2img_pipeline(sampler)
         elif isinstance(processing, ONNXStableDiffusionProcessingImg2Img):
-            return self.create_img2img_pipeline(sampler)
+            if processing.image_mask is None:
+                return self.create_img2img_pipeline(sampler)
+            else:
+                return self.create_inpaint_pipeline(sampler)
 
     @abstractmethod
     def create_txt2img_pipeline(self, sampler: SamplerData) -> T2I:
@@ -108,9 +138,14 @@ class BaseONNXModel(Generic[T2I, I2I], WebuiSdModel, metaclass=ABCMeta):
     def create_img2img_pipeline(self, sampler: SamplerData) -> I2I:
         pass
 
+    @abstractmethod
+    def create_inpaint_pipeline(self, sampler: SamplerData) -> INP:
+        pass
+
+
 @dataclass(repr=False)
 class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
-    sd_model: object = None
+    sd_model: BaseONNXModel = None
     outpath_samples: str = None
     outpath_grids: str = None
     prompt: str = ""
@@ -200,7 +235,10 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
 
     def __post_init__(self):
         if self.sampler_index is not None:
-            print("sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name", file=sys.stderr)
+            print(
+                "sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name",
+                file=sys.stderr,
+            )
 
         self.comments = {}
 
@@ -208,10 +246,16 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
             self.styles = []
 
         self.sampler_noise_scheduler_override = None
-        self.s_min_uncond = self.s_min_uncond if self.s_min_uncond is not None else shared.opts.s_min_uncond
+        self.s_min_uncond = (
+            self.s_min_uncond
+            if self.s_min_uncond is not None
+            else shared.opts.s_min_uncond
+        )
         self.s_churn = self.s_churn if self.s_churn is not None else shared.opts.s_churn
         self.s_tmin = self.s_tmin if self.s_tmin is not None else shared.opts.s_tmin
-        self.s_tmax = (self.s_tmax if self.s_tmax is not None else shared.opts.s_tmax) or float('inf')
+        self.s_tmax = (
+            self.s_tmax if self.s_tmax is not None else shared.opts.s_tmax
+        ) or float("inf")
         self.s_noise = self.s_noise if self.s_noise is not None else shared.opts.s_noise
 
         self.extra_generation_params = self.extra_generation_params or {}
@@ -233,14 +277,46 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
         if self.sampler is None:
             raise Exception("Unknown sampler.")
 
+        if not self.sd_model.is_optimized and self.sd_model.sd_checkpoint_info.optimized_model_info is None:
+            from modules.sd_olive_ui import optimize
+            self.sd_model.sd_checkpoint_info.optimized_model_info = optimize(
+                unoptimized_dir=self.sd_model.path,
+                optimized_dir=None,
+                save_optimized=False,
+                vae_id=None,
+                vae_subfolder="vae",
+                use_fp16=True,
+                sample_height=self.height,
+                sample_width=self.width,
+                submodels=[
+                    "text_encoder",
+                    "unet",
+                    "vae_decoder",
+                    "vae_encoder",
+                ] + (
+                    ["text_encoder_2"] if self.sd_model.is_sdxl else []
+                ),
+                olive_merge_lora=False,
+            )
+
         self.sd_model.set_mem_pattern(shared.opts.enable_mem_pattern)
         self.sd_model.set_mem_reuse(shared.opts.enable_mem_reuse)
-        self.sd_model.add_free_dimension_override_by_name("unet_sample_batch", self.batch_size * 2)
-        self.sd_model.add_free_dimension_override_by_name("unet_hidden_batch", self.batch_size * 2)
+        self.sd_model.add_free_dimension_override_by_name(
+            "unet_sample_batch", self.batch_size * 2
+        )
+        self.sd_model.add_free_dimension_override_by_name(
+            "unet_hidden_batch", self.batch_size * 2
+        )
         if self.sd_model.is_sdxl:
-            self.sd_model.add_free_dimension_override_by_name("unet_text_embeds_batch", self.batch_size * 2)
-            self.sd_model.add_free_dimension_override_by_name("unet_text_embeds_size", self.height + 256)
-            self.sd_model.add_free_dimension_override_by_name("unet_time_ids_batch", self.batch_size * 2)
+            self.sd_model.add_free_dimension_override_by_name(
+                "unet_text_embeds_batch", self.batch_size * 2
+            )
+            self.sd_model.add_free_dimension_override_by_name(
+                "unet_text_embeds_size", self.height + 256
+            )
+            self.sd_model.add_free_dimension_override_by_name(
+                "unet_time_ids_batch", self.batch_size * 2
+            )
 
     @property
     def scripts(self):
@@ -250,7 +326,11 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
     def scripts(self, value):
         self.scripts_value = value
 
-        if self.scripts_value and self.script_args_value and not self.scripts_setup_complete:
+        if (
+            self.scripts_value
+            and self.script_args_value
+            and not self.scripts_setup_complete
+        ):
             self.setup_scripts()
 
     @property
@@ -261,7 +341,11 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
     def script_args(self, value):
         self.script_args_value = value
 
-        if self.scripts_value and self.script_args_value and not self.scripts_setup_complete:
+        if (
+            self.scripts_value
+            and self.script_args_value
+            and not self.scripts_setup_complete
+        ):
             self.setup_scripts()
 
     def setup_scripts(self):
@@ -275,7 +359,7 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
         elif isinstance(self.negative_prompt, list):
             self.all_prompts = [self.prompt] * len(self.negative_prompt)
         else:
-            self.all_prompts = self.batch_size * self.n_iter * [self.prompt]
+            self.all_prompts = self.batch_size * [self.prompt]
 
         if isinstance(self.negative_prompt, list):
             self.all_negative_prompts = self.negative_prompt
@@ -283,10 +367,18 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
             self.all_negative_prompts = [self.negative_prompt] * len(self.all_prompts)
 
         if len(self.all_prompts) != len(self.all_negative_prompts):
-            raise RuntimeError(f"Received a different number of prompts ({len(self.all_prompts)}) and negative prompts ({len(self.all_negative_prompts)})")
+            raise RuntimeError(
+                f"Received a different number of prompts ({len(self.all_prompts)}) and negative prompts ({len(self.all_negative_prompts)})"
+            )
 
-        self.all_prompts = [shared.prompt_styles.apply_styles_to_prompt(x, self.styles) for x in self.all_prompts]
-        self.all_negative_prompts = [shared.prompt_styles.apply_negative_styles_to_prompt(x, self.styles) for x in self.all_negative_prompts]
+        self.all_prompts = [
+            shared.prompt_styles.apply_styles_to_prompt(x, self.styles)
+            for x in self.all_prompts
+        ]
+        self.all_negative_prompts = [
+            shared.prompt_styles.apply_negative_styles_to_prompt(x, self.styles)
+            for x in self.all_negative_prompts
+        ]
 
         self.main_prompt = self.all_prompts[0]
         self.main_negative_prompt = self.all_negative_prompts[0]
@@ -296,10 +388,8 @@ class ONNXStableDiffusionProcessing(metaclass=ABCMeta):
 
     @property
     def pipeline(self) -> diffusers.DiffusionPipeline:
-        if shared.opts.reload_model_before_each_generation:
+        if shared.opts.collect_garbage_for_each_generation:
             self.sd_model.pipeline = None
-        elif self.sd_model.pipeline is None:
-            self.sd_model.pipeline = self._create_pipeline()
         return self.sd_model.pipeline or self._create_pipeline()
 
     @abstractmethod
@@ -331,8 +421,8 @@ class ONNXStableDiffusionProcessingTxt2Img(ONNXStableDiffusionProcessing):
     hr_resize_y: int = 0
     hr_checkpoint_name: str = None
     hr_sampler_name: str = None
-    hr_prompt: str = ''
-    hr_negative_prompt: str = ''
+    hr_prompt: str = ""
+    hr_negative_prompt: str = ""
 
     cached_hr_uc = [None, None]
     cached_hr_c = [None, None]
@@ -370,28 +460,34 @@ class ONNXStableDiffusionProcessingTxt2Img(ONNXStableDiffusionProcessing):
         if not self.enable_hr:
             return
 
-        if self.hr_prompt == '':
+        if self.hr_prompt == "":
             self.hr_prompt = self.prompt
 
-        if self.hr_negative_prompt == '':
+        if self.hr_negative_prompt == "":
             self.hr_negative_prompt = self.negative_prompt
 
         if isinstance(self.hr_prompt, list):
             self.all_hr_prompts = self.hr_prompt
         else:
-            self.all_hr_prompts = self.batch_size * self.n_iter * [self.hr_prompt]
+            self.all_hr_prompts = self.batch_size * [self.hr_prompt]
 
         if isinstance(self.hr_negative_prompt, list):
             self.all_hr_negative_prompts = self.hr_negative_prompt
         else:
-            self.all_hr_negative_prompts = self.batch_size * self.n_iter * [self.hr_negative_prompt]
+            self.all_hr_negative_prompts = self.batch_size * [self.hr_negative_prompt]
 
-        self.all_hr_prompts = [shared.prompt_styles.apply_styles_to_prompt(x, self.styles) for x in self.all_hr_prompts]
-        self.all_hr_negative_prompts = [shared.prompt_styles.apply_negative_styles_to_prompt(x, self.styles) for x in self.all_hr_negative_prompts]
+        self.all_hr_prompts = [
+            shared.prompt_styles.apply_styles_to_prompt(x, self.styles)
+            for x in self.all_hr_prompts
+        ]
+        self.all_hr_negative_prompts = [
+            shared.prompt_styles.apply_negative_styles_to_prompt(x, self.styles)
+            for x in self.all_hr_negative_prompts
+        ]
 
     def forward(self) -> processing.Processed:
-        if type(self.prompt) == list:
-            assert(len(self.prompt) > 0)
+        if isinstance(self.prompt, list):
+            assert len(self.prompt) > 0
         else:
             assert self.prompt is not None
 
@@ -401,12 +497,15 @@ class ONNXStableDiffusionProcessingTxt2Img(ONNXStableDiffusionProcessing):
         seed = processing.get_fixed_seed(self.seed)
         subseed = processing.get_fixed_seed(self.subseed)
 
-        if type(seed) == list:
+        if isinstance(seed, list):
             self.all_seeds = seed
         else:
-            self.all_seeds = [int(seed) + (x if self.subseed_strength == 0 else 0) for x in range(len(self.all_prompts))]
+            self.all_seeds = [
+                int(seed) + (x if self.subseed_strength == 0 else 0)
+                for x in range(len(self.all_prompts))
+            ]
 
-        if type(subseed) == list:
+        if isinstance(subseed, list):
             self.all_subseeds = subseed
         else:
             self.all_subseeds = [int(subseed) + x for x in range(len(self.all_prompts))]
@@ -417,28 +516,33 @@ class ONNXStableDiffusionProcessingTxt2Img(ONNXStableDiffusionProcessing):
         output_images = []
 
         for i in range(0, self.n_iter):
-            result = self.pipeline(self,
+            result: diffusers.pipelines.stable_diffusion.StableDiffusionPipelineOutput = self.pipeline(
+                self,
                 prompt=self.all_prompts,
                 negative_prompt=self.all_negative_prompts,
                 num_inference_steps=self.steps,
+                num_images_per_prompt=1,
                 height=self.height,
                 width=self.width,
-                #eta=self.eta,
+                eta=self.eta,
                 seed=seed + i,
             )
-            image = result.images[0]
-            images.save_image(image, self.outpath_samples, "")
-            output_images.append(image)
+            for image in result.images:
+                images.save_image(image, self.outpath_samples, "")
+            output_images += result.images
 
             result.images = None
             result = None
-            image = None
             gc.collect()
             torch.cuda.empty_cache()
 
         index_of_first_image = 0
-        unwanted_grid_because_of_img_count = len(output_images) < 2 and shared.opts.grid_only_if_multiple
-        if (shared.opts.return_grid or shared.opts.grid_save) and not unwanted_grid_because_of_img_count:
+        unwanted_grid_because_of_img_count = (
+            len(output_images) < 2 and shared.opts.grid_only_if_multiple
+        )
+        if (
+            shared.opts.return_grid or shared.opts.grid_save
+        ) and not unwanted_grid_because_of_img_count:
             grid = images.image_grid(output_images, self.n_iter)
 
             if shared.opts.return_grid:
@@ -446,7 +550,16 @@ class ONNXStableDiffusionProcessingTxt2Img(ONNXStableDiffusionProcessing):
                 index_of_first_image = 1
 
             if shared.opts.grid_save:
-                images.save_image(grid, self.outpath_grids, "grid", self.all_seeds[0], self.all_prompts[0], shared.opts.grid_format, short_filename=not shared.opts.grid_extended_filename, grid=True)
+                images.save_image(
+                    grid,
+                    self.outpath_grids,
+                    "grid",
+                    self.all_seeds[0],
+                    self.all_prompts[0],
+                    shared.opts.grid_format,
+                    short_filename=not shared.opts.grid_extended_filename,
+                    grid=True,
+                )
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -493,7 +606,11 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
 
         self.image_mask = self.mask
         self.mask = None
-        self.initial_noise_multiplier = shared.opts.initial_noise_multiplier if self.initial_noise_multiplier is None else self.initial_noise_multiplier
+        self.initial_noise_multiplier = (
+            shared.opts.initial_noise_multiplier
+            if self.initial_noise_multiplier is None
+            else self.initial_noise_multiplier
+        )
 
     def forward(self) -> processing.Processed:
         crop_region = None
@@ -522,45 +639,65 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
 
             if self.inpaint_full_res:
                 self.mask_for_overlay = image_mask
-                mask = image_mask.convert('L')
-                crop_region = masking.get_crop_region(np.array(mask), self.inpaint_full_res_padding)
-                crop_region = masking.expand_crop_region(crop_region, self.width, self.height, mask.width, mask.height)
+                mask = image_mask.convert("L")
+                crop_region = masking.get_crop_region(
+                    np.array(mask), self.inpaint_full_res_padding
+                )
+                crop_region = masking.expand_crop_region(
+                    crop_region, self.width, self.height, mask.width, mask.height
+                )
                 x1, y1, x2, y2 = crop_region
 
                 mask = mask.crop(crop_region)
                 image_mask = images.resize_image(2, mask, self.width, self.height)
-                self.paste_to = (x1, y1, x2-x1, y2-y1)
+                self.paste_to = (x1, y1, x2 - x1, y2 - y1)
             else:
-                image_mask = images.resize_image(self.resize_mode, image_mask, self.width, self.height)
+                image_mask = images.resize_image(
+                    self.resize_mode, image_mask, self.width, self.height
+                )
                 np_mask = np.array(image_mask)
-                np_mask = np.clip((np_mask.astype(np.float32)) * 2, 0, 255).astype(np.uint8)
+                np_mask = np.clip((np_mask.astype(np.float32)) * 2, 0, 255).astype(
+                    np.uint8
+                )
                 self.mask_for_overlay = Image.fromarray(np_mask)
 
             self.overlay_images = []
 
         latent_mask = self.latent_mask if self.latent_mask is not None else image_mask
 
-        add_color_corrections = shared.opts.img2img_color_correction and self.color_corrections is None
+        add_color_corrections = (
+            shared.opts.img2img_color_correction and self.color_corrections is None
+        )
         if add_color_corrections:
             self.color_corrections = []
         imgs = []
         for img in self.init_images:
-
             # Save init image
             if shared.opts.save_init_img:
                 self.init_img_hash = hashlib.md5(img.tobytes()).hexdigest()
-                images.save_image(img, path=shared.opts.outdir_init_images, basename=None, forced_filename=self.init_img_hash, save_to_dirs=False)
+                images.save_image(
+                    img,
+                    path=shared.opts.outdir_init_images,
+                    basename=None,
+                    forced_filename=self.init_img_hash,
+                    save_to_dirs=False,
+                )
 
             image = images.flatten(img, shared.opts.img2img_background_color)
 
             if crop_region is None and self.resize_mode != 3:
-                image = images.resize_image(self.resize_mode, image, self.width, self.height)
+                image = images.resize_image(
+                    self.resize_mode, image, self.width, self.height
+                )
 
             if image_mask is not None:
-                image_masked = Image.new('RGBa', (image.width, image.height))
-                image_masked.paste(image.convert("RGBA").convert("RGBa"), mask=ImageOps.invert(self.mask_for_overlay.convert('L')))
+                image_masked = Image.new("RGBa", (image.width, image.height))
+                image_masked.paste(
+                    image.convert("RGBA").convert("RGBa"),
+                    mask=ImageOps.invert(self.mask_for_overlay.convert("L")),
+                )
 
-                self.overlay_images.append(image_masked.convert('RGBA'))
+                self.overlay_images.append(image_masked.convert("RGBA"))
 
             # crop_region is not None if we are doing inpaint full res
             if crop_region is not None:
@@ -580,7 +717,9 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
             imgs.append(image)
 
         if len(imgs) == 1:
-            batch_images = np.expand_dims(imgs[0], axis=0).repeat(self.batch_size, axis=0)
+            batch_images = np.expand_dims(imgs[0], axis=0).repeat(
+                self.batch_size, axis=0
+            )
             if self.overlay_images is not None:
                 self.overlay_images = self.overlay_images * self.batch_size
 
@@ -591,12 +730,14 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
             self.batch_size = len(imgs)
             batch_images = np.array(imgs)
         else:
-            raise RuntimeError(f"bad number of images passed: {len(imgs)}; expecting {self.batch_size} or less")
+            raise RuntimeError(
+                f"bad number of images passed: {len(imgs)}; expecting {self.batch_size} or less"
+            )
 
-        image = 2. * torch.from_numpy(batch_images) - 0.7878375
+        image = 2.0 * torch.from_numpy(batch_images) - 0.7878377
 
-        if type(self.prompt) == list:
-            assert(len(self.prompt) > 0)
+        if isinstance(self.prompt, list):
+            assert len(self.prompt) > 0
         else:
             assert self.prompt is not None
 
@@ -606,12 +747,15 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
         seed = processing.get_fixed_seed(self.seed)
         subseed = processing.get_fixed_seed(self.subseed)
 
-        if type(seed) == list:
+        if isinstance(seed, list):
             self.all_seeds = seed
         else:
-            self.all_seeds = [int(seed) + (x if self.subseed_strength == 0 else 0) for x in range(len(self.all_prompts))]
+            self.all_seeds = [
+                int(seed) + (x if self.subseed_strength == 0 else 0)
+                for x in range(len(self.all_prompts))
+            ]
 
-        if type(subseed) == list:
+        if isinstance(subseed, list):
             self.all_subseeds = subseed
         else:
             self.all_subseeds = [int(subseed) + x for x in range(len(self.all_prompts))]
@@ -622,28 +766,34 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
         output_images = []
 
         for i in range(0, self.n_iter):
-            result = self.pipeline(self,
+            result: diffusers.pipelines.stable_diffusion.StableDiffusionPipelineOutput = self.pipeline(
+                self,
                 image=image,
+                # mask=self.image_mask,
                 prompt=self.all_prompts,
                 negative_prompt=self.all_negative_prompts,
                 num_inference_steps=self.steps,
+                num_images_per_prompt=1,
                 strength=self.denoising_strength,
-                #eta=self.eta,
+                eta=self.eta,
                 seed=seed + i,
             )
-            image = result.images[0]
-            images.save_image(image, self.outpath_samples, "")
-            output_images.append(image)
+            for image in result.images:
+                images.save_image(image, self.outpath_samples, "")
+            output_images += result.images
 
             result.images = None
             result = None
-            image = None
             gc.collect()
             torch.cuda.empty_cache()
 
         index_of_first_image = 0
-        unwanted_grid_because_of_img_count = len(output_images) < 2 and shared.opts.grid_only_if_multiple
-        if (shared.opts.return_grid or shared.opts.grid_save) and not unwanted_grid_because_of_img_count:
+        unwanted_grid_because_of_img_count = (
+            len(output_images) < 2 and shared.opts.grid_only_if_multiple
+        )
+        if (
+            shared.opts.return_grid or shared.opts.grid_save
+        ) and not unwanted_grid_because_of_img_count:
             grid = images.image_grid(output_images, self.n_iter)
 
             if shared.opts.return_grid:
@@ -651,7 +801,16 @@ class ONNXStableDiffusionProcessingImg2Img(ONNXStableDiffusionProcessing):
                 index_of_first_image = 1
 
             if shared.opts.grid_save:
-                images.save_image(grid, self.outpath_grids, "grid", self.all_seeds[0], self.all_prompts[0], shared.opts.grid_format, short_filename=not shared.opts.grid_extended_filename, grid=True)
+                images.save_image(
+                    grid,
+                    self.outpath_grids,
+                    "grid",
+                    self.all_seeds[0],
+                    self.all_prompts[0],
+                    shared.opts.grid_format,
+                    short_filename=not shared.opts.grid_extended_filename,
+                    grid=True,
+                )
 
         gc.collect()
         torch.cuda.empty_cache()

@@ -20,15 +20,15 @@ args, _ = cmd_args.parser.parse_known_args()
 logging_config.setup_logging(args.loglevel)
 
 python = sys.executable
-git = os.environ.get('GIT', "git")
-index_url = os.environ.get('INDEX_URL', "")
+git = os.environ.get("GIT", "git")
+index_url = os.environ.get("INDEX_URL", "")
 dir_repos = "repositories"
 
 # Whether to default to printing command output
-default_command_live = (os.environ.get('WEBUI_LAUNCH_LIVE_OUTPUT') == "1")
+default_command_live = os.environ.get("WEBUI_LAUNCH_LIVE_OUTPUT") == "1"
 
-if 'GRADIO_ANALYTICS_ENABLED' not in os.environ:
-    os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
+if "GRADIO_ANALYTICS_ENABLED" not in os.environ:
+    os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
 
 def check_python_version():
@@ -45,7 +45,8 @@ def check_python_version():
     if not (major == 3 and minor in supported_minors):
         import modules.errors
 
-        modules.errors.print_error_explanation(f"""
+        modules.errors.print_error_explanation(
+            f"""
 INCOMPATIBLE PYTHON VERSION
 
 This program is tested with 3.10.6 Python, but you have {major}.{minor}.{micro}.
@@ -59,13 +60,16 @@ You can download 3.10 Python from here: https://www.python.org/downloads/release
 {"Alternatively, use a binary release of WebUI: https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases" if is_windows else ""}
 
 Use --skip-python-version-check to suppress this warning.
-""")
+"""
+        )
 
 
 @lru_cache()
 def commit_hash():
     try:
-        return subprocess.check_output([git, "rev-parse", "HEAD"], shell=False, encoding='utf8').strip()
+        return subprocess.check_output(
+            [git, "rev-parse", "HEAD"], shell=False, encoding="utf8"
+        ).strip()
     except Exception:
         return "<none>"
 
@@ -73,11 +77,14 @@ def commit_hash():
 @lru_cache()
 def git_tag():
     try:
-        return subprocess.check_output([git, "describe", "--tags"], shell=False, encoding='utf8').strip()
+        return subprocess.check_output(
+            [git, "describe", "--tags"], shell=False, encoding="utf8"
+        ).strip()
     except Exception:
         try:
-
-            changelog_md = os.path.join(os.path.dirname(os.path.dirname(__file__)), "CHANGELOG.md")
+            changelog_md = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "CHANGELOG.md"
+            )
             with open(changelog_md, "r", encoding="utf-8") as file:
                 line = next((line.strip() for line in file if line.strip()), "<none>")
                 line = line.replace("## ", "")
@@ -86,7 +93,9 @@ def git_tag():
             return "<none>"
 
 
-def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live) -> str:
+def run(
+    command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live
+) -> str:
     if desc is not None:
         print(desc)
 
@@ -94,8 +103,8 @@ def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_
         "args": command,
         "shell": True,
         "env": os.environ if custom_env is None else custom_env,
-        "encoding": 'utf8',
-        "errors": 'ignore',
+        "encoding": "utf8",
+        "errors": "ignore",
     }
 
     if not live:
@@ -115,7 +124,7 @@ def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_
             error_bits.append(f"stderr: {result.stderr}")
         raise RuntimeError("\n".join(error_bits))
 
-    return (result.stdout or "")
+    return result.stdout or ""
 
 
 def is_installed(package):
@@ -135,15 +144,24 @@ def run_pip(command, desc=None, live=default_command_live):
     if args.skip_install:
         return
 
-    index_url_line = f' --index-url {index_url}' if index_url != '' else ''
-    return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+    index_url_line = f" --index-url {index_url}" if index_url != "" else ""
+    return run(
+        f'"{python}" -m pip {command} --prefer-binary{index_url_line}',
+        desc=f"Installing {desc}",
+        errdesc=f"Couldn't install {desc}",
+        live=live,
+    )
 
 
 def run_pip_uninstall(package: str, desc: str = None):
     if args.skip_install:
         return
 
-    return run(f'"{python}" -m pip uninstall {package}', desc=f"Uninstalling {desc}", errdesc=f"Couldn't uninstall {desc}")
+    return run(
+        f'"{python}" -m pip uninstall {package}',
+        desc=f"Uninstalling {desc}",
+        errdesc=f"Couldn't uninstall {desc}",
+    )
 
 
 def check_run_python(code: str) -> bool:
@@ -152,14 +170,39 @@ def check_run_python(code: str) -> bool:
 
 
 def git_fix_workspace(dir, name):
-    run(f'"{git}" -C "{dir}" fetch --refetch --no-auto-gc', f"Fetching all contents for {name}", f"Couldn't fetch {name}", live=True)
-    run(f'"{git}" -C "{dir}" gc --aggressive --prune=now', f"Pruning {name}", f"Couldn't prune {name}", live=True)
+    run(
+        f'"{git}" -C "{dir}" fetch --refetch --no-auto-gc',
+        f"Fetching all contents for {name}",
+        f"Couldn't fetch {name}",
+        live=True,
+    )
+    run(
+        f'"{git}" -C "{dir}" gc --aggressive --prune=now',
+        f"Pruning {name}",
+        f"Couldn't prune {name}",
+        live=True,
+    )
     return
 
 
-def run_git(dir, name, command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live, autofix=True):
+def run_git(
+    dir,
+    name,
+    command,
+    desc=None,
+    errdesc=None,
+    custom_env=None,
+    live: bool = default_command_live,
+    autofix=True,
+):
     try:
-        return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
+        return run(
+            f'"{git}" -C "{dir}" {command}',
+            desc=desc,
+            errdesc=errdesc,
+            custom_env=custom_env,
+            live=live,
+        )
     except RuntimeError:
         if not autofix:
             raise
@@ -167,7 +210,13 @@ def run_git(dir, name, command, desc=None, errdesc=None, custom_env=None, live: 
     print(f"{errdesc}, attempting autofix...")
     git_fix_workspace(dir, name)
 
-    return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
+    return run(
+        f'"{git}" -C "{dir}" {command}',
+        desc=desc,
+        errdesc=errdesc,
+        custom_env=custom_env,
+        live=live,
+    )
 
 
 def git_clone(url, dir, name, commithash=None):
@@ -177,37 +226,90 @@ def git_clone(url, dir, name, commithash=None):
         if commithash is None:
             return
 
-        current_hash = run_git(dir, name, 'rev-parse HEAD', None, f"Couldn't determine {name}'s hash: {commithash}", live=False).strip()
+        current_hash = run_git(
+            dir,
+            name,
+            "rev-parse HEAD",
+            None,
+            f"Couldn't determine {name}'s hash: {commithash}",
+            live=False,
+        ).strip()
         if current_hash == commithash:
             return
 
-        if run_git(dir, name, 'config --get remote.origin.url', None, f"Couldn't determine {name}'s origin URL", live=False).strip() != url:
-            run_git(dir, name, f'remote set-url origin "{url}"', None, f"Failed to set {name}'s origin URL", live=False)
+        if (
+            run_git(
+                dir,
+                name,
+                "config --get remote.origin.url",
+                None,
+                f"Couldn't determine {name}'s origin URL",
+                live=False,
+            ).strip()
+            != url
+        ):
+            run_git(
+                dir,
+                name,
+                f'remote set-url origin "{url}"',
+                None,
+                f"Failed to set {name}'s origin URL",
+                live=False,
+            )
 
-        run_git(dir, name, 'fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}", autofix=False)
+        run_git(
+            dir,
+            name,
+            "fetch",
+            f"Fetching updates for {name}...",
+            f"Couldn't fetch {name}",
+            autofix=False,
+        )
 
-        run_git(dir, name, f'checkout {commithash}', f"Checking out commit for {name} with hash: {commithash}...", f"Couldn't checkout commit {commithash} for {name}", live=True)
+        run_git(
+            dir,
+            name,
+            f"checkout {commithash}",
+            f"Checking out commit for {name} with hash: {commithash}...",
+            f"Couldn't checkout commit {commithash} for {name}",
+            live=True,
+        )
 
         return
 
     try:
-        run(f'"{git}" clone "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True)
+        run(
+            f'"{git}" clone "{url}" "{dir}"',
+            f"Cloning {name} into {dir}...",
+            f"Couldn't clone {name}",
+            live=True,
+        )
     except RuntimeError:
         shutil.rmtree(dir, ignore_errors=True)
         raise
 
     if commithash is not None:
-        run(f'"{git}" -C "{dir}" checkout {commithash}', None, "Couldn't checkout {name}'s hash: {commithash}")
+        run(
+            f'"{git}" -C "{dir}" checkout {commithash}',
+            None,
+            "Couldn't checkout {name}'s hash: {commithash}",
+        )
 
 
 def git_pull_recursive(dir):
     for subdir, _, _ in os.walk(dir):
-        if os.path.exists(os.path.join(subdir, '.git')):
+        if os.path.exists(os.path.join(subdir, ".git")):
             try:
-                output = subprocess.check_output([git, '-C', subdir, 'pull', '--autostash'])
-                print(f"Pulled changes for repository in '{subdir}':\n{output.decode('utf-8').strip()}\n")
+                output = subprocess.check_output(
+                    [git, "-C", subdir, "pull", "--autostash"]
+                )
+                print(
+                    f"Pulled changes for repository in '{subdir}':\n{output.decode('utf-8').strip()}\n"
+                )
             except subprocess.CalledProcessError as e:
-                print(f"Couldn't perform 'git pull' on repository in '{subdir}':\n{e.output.decode('utf-8').strip()}\n")
+                print(
+                    f"Couldn't perform 'git pull' on repository in '{subdir}':\n{e.output.decode('utf-8').strip()}\n"
+                )
 
 
 def version_check(commit):
@@ -219,7 +321,7 @@ def version_check(commit):
             print("| You are not up to date with the most recent release. |")
             print("| Consider running `git pull` to update.               |")
             print("--------------------------------------------------------")
-        elif commits['commit']['sha'] == commit:
+        elif commits["commit"]["sha"] == commit:
             print("You are up to date with the most recent release.")
         else:
             print("Not a git clone, can't perform version check.")
@@ -234,9 +336,15 @@ def run_extension_installer(extension_dir):
 
     try:
         env = os.environ.copy()
-        env['PYTHONPATH'] = f"{os.path.abspath('.')}{os.pathsep}{env.get('PYTHONPATH', '')}"
+        env[
+            "PYTHONPATH"
+        ] = f"{os.path.abspath('.')}{os.pathsep}{env.get('PYTHONPATH', '')}"
 
-        stdout = run(f'"{python}" "{path_installer}"', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+        stdout = run(
+            f'"{python}" "{path_installer}"',
+            errdesc=f"Error running install.py for extension {extension_dir}",
+            custom_env=env,
+        ).strip()
         if stdout:
             print(stdout)
     except Exception as e:
@@ -253,10 +361,15 @@ def list_extensions(settings_file):
     except Exception:
         errors.report("Could not load settings", exc_info=True)
 
-    disabled_extensions = set(settings.get('disabled_extensions', []))
-    disable_all_extensions = settings.get('disable_all_extensions', 'none')
+    disabled_extensions = set(settings.get("disabled_extensions", []))
+    disable_all_extensions = settings.get("disable_all_extensions", "none")
 
-    if disable_all_extensions != 'none' or args.disable_extra_extensions or args.disable_all_extensions or not os.path.isdir(extensions_dir):
+    if (
+        disable_all_extensions != "none"
+        or args.disable_extra_extensions
+        or args.disable_all_extensions
+        or not os.path.isdir(extensions_dir)
+    ):
         return []
 
     return [x for x in os.listdir(extensions_dir) if x not in disabled_extensions]
@@ -309,55 +422,100 @@ def requirements_met(requirements_file):
             except Exception:
                 return False
 
-            if packaging.version.parse(version_required) != packaging.version.parse(version_installed):
+            if packaging.version.parse(version_required) != packaging.version.parse(
+                version_installed
+            ):
                 return False
 
     return True
 
 
 def prepare_environment():
-    torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu118")
-    if args.backend == 'auto':
-        nvidia_driver_found = shutil.which('nvidia-smi') is not None
-        rocm_found = shutil.which('rocminfo') is not None
+    torch_index_url = os.environ.get(
+        "TORCH_INDEX_URL", "https://download.pytorch.org/whl/cu118"
+    )
+    if args.backend == "auto":
+        nvidia_driver_found = shutil.which("nvidia-smi") is not None
+        rocm_found = shutil.which("rocminfo") is not None
         if nvidia_driver_found:
-            args.backend = 'cuda'
-            print("NVIDIA driver was found. Automatically changed backend to 'cuda'. You can manually select which backend will be used through '--backend' argument.")
+            args.backend = "cuda"
+            print(
+                "NVIDIA driver was found. Automatically changed backend to 'cuda'. You can manually select which backend will be used through '--backend' argument."
+            )
         elif rocm_found:
-            args.backend = 'rocm'
-            print("ROCm was found. Automatically changed backend to 'rocm'. You can manually select which backend will be used through '--backend' argument.")
+            args.backend = "rocm"
+            print(
+                "ROCm was found. Automatically changed backend to 'rocm'. You can manually select which backend will be used through '--backend' argument."
+            )
         else:
-            args.backend = 'directml'
+            args.backend = "directml"
         cmd_args.parser.set_defaults(backend=args.backend)
-    if args.backend == 'cuda':
-        torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url {torch_index_url}")
-    if args.backend == 'rocm':
-        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url https://download.pytorch.org/whl/rocm5.4.2")
-    if args.backend == 'directml':
-        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.0.0 torchvision==0.15.1 torch-directml")
+    if args.backend == "cuda":
+        torch_command = os.environ.get(
+            "TORCH_COMMAND",
+            f"pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url {torch_index_url}",
+        )
+    if args.backend == "rocm":
+        torch_command = os.environ.get(
+            "TORCH_COMMAND",
+            "pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url https://download.pytorch.org/whl/rocm5.4.2",
+        )
+    if args.backend == "directml":
+        torch_command = os.environ.get(
+            "TORCH_COMMAND",
+            "pip install torch==2.0.0 torchvision==0.15.1 torch-directml",
+        )
 
-    requirements_file = os.environ.get('REQS_FILE', "requirements_onnx.txt" if args.onnx else "requirements_versions.txt")
+    requirements_file = os.environ.get(
+        "REQS_FILE",
+        "requirements_onnx.txt" if args.onnx else "requirements_versions.txt",
+    )
 
-    xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.20')
-    clip_package = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
-    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
+    xformers_package = os.environ.get("XFORMERS_PACKAGE", "xformers==0.0.20")
+    clip_package = os.environ.get(
+        "CLIP_PACKAGE",
+        "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip",
+    )
+    openclip_package = os.environ.get(
+        "OPENCLIP_PACKAGE",
+        "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip",
+    )
 
-    stable_diffusion_repo = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/Stability-AI/stablediffusion.git")
-    stable_diffusion_xl_repo = os.environ.get('STABLE_DIFFUSION_XL_REPO', "https://github.com/Stability-AI/generative-models.git")
-    k_diffusion_repo = os.environ.get('K_DIFFUSION_REPO', 'https://github.com/crowsonkb/k-diffusion.git')
-    codeformer_repo = os.environ.get('CODEFORMER_REPO', 'https://github.com/sczhou/CodeFormer.git')
-    blip_repo = os.environ.get('BLIP_REPO', 'https://github.com/salesforce/BLIP.git')
+    stable_diffusion_repo = os.environ.get(
+        "STABLE_DIFFUSION_REPO", "https://github.com/Stability-AI/stablediffusion.git"
+    )
+    stable_diffusion_xl_repo = os.environ.get(
+        "STABLE_DIFFUSION_XL_REPO",
+        "https://github.com/Stability-AI/generative-models.git",
+    )
+    k_diffusion_repo = os.environ.get(
+        "K_DIFFUSION_REPO", "https://github.com/crowsonkb/k-diffusion.git"
+    )
+    codeformer_repo = os.environ.get(
+        "CODEFORMER_REPO", "https://github.com/sczhou/CodeFormer.git"
+    )
+    blip_repo = os.environ.get("BLIP_REPO", "https://github.com/salesforce/BLIP.git")
 
-    stable_diffusion_commit_hash = os.environ.get('STABLE_DIFFUSION_COMMIT_HASH', "cf1d67a6fd5ea1aa600c4df58e5b47da45f6bdbf")
-    stable_diffusion_xl_commit_hash = os.environ.get('STABLE_DIFFUSION_XL_COMMIT_HASH', "45c443b316737a4ab6e40413d7794a7f5657c19f")
-    k_diffusion_commit_hash = os.environ.get('K_DIFFUSION_COMMIT_HASH', "ab527a9a6d347f364e3d185ba6d714e22d80cb3c")
-    codeformer_commit_hash = os.environ.get('CODEFORMER_COMMIT_HASH', "c5b4593074ba6214284d6acd5f1719b6c5d739af")
-    blip_commit_hash = os.environ.get('BLIP_COMMIT_HASH', "48211a1594f1321b00f14c9f7a5b4813144b2fb9")
+    stable_diffusion_commit_hash = os.environ.get(
+        "STABLE_DIFFUSION_COMMIT_HASH", "cf1d67a6fd5ea1aa600c4df58e5b47da45f6bdbf"
+    )
+    stable_diffusion_xl_commit_hash = os.environ.get(
+        "STABLE_DIFFUSION_XL_COMMIT_HASH", "45c443b316737a4ab6e40413d7794a7f5657c19f"
+    )
+    k_diffusion_commit_hash = os.environ.get(
+        "K_DIFFUSION_COMMIT_HASH", "ab527a9a6d347f364e3d185ba6d714e22d80cb3c"
+    )
+    codeformer_commit_hash = os.environ.get(
+        "CODEFORMER_COMMIT_HASH", "c5b4593074ba6214284d6acd5f1719b6c5d739af"
+    )
+    blip_commit_hash = os.environ.get(
+        "BLIP_COMMIT_HASH", "48211a1594f1321b00f14c9f7a5b4813144b2fb9"
+    )
 
     try:
         # the existence of this file is a signal to webui.sh/bat that webui needs to be restarted when it stops execution
         os.remove(os.path.join(script_path, "tmp", "restart"))
-        os.environ.setdefault('SD_WEBUI_RESTARTING', '1')
+        os.environ.setdefault("SD_WEBUI_RESTARTING", "1")
     except OSError:
         pass
 
@@ -374,8 +532,17 @@ def prepare_environment():
     print(f"Version: {tag}")
     print(f"Commit hash: {commit}")
 
-    if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
-        run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+    if (
+        args.reinstall_torch
+        or not is_installed("torch")
+        or not is_installed("torchvision")
+    ):
+        run(
+            f'"{python}" -m {torch_command}',
+            "Installing torch and torchvision",
+            "Couldn't install torch",
+            live=True,
+        )
         startup_timer.record("install torch")
 
     if not is_installed("clip"):
@@ -396,31 +563,54 @@ def prepare_environment():
 
     os.makedirs(os.path.join(script_path, dir_repos), exist_ok=True)
 
-    git_clone(stable_diffusion_repo, repo_dir('stable-diffusion-stability-ai'), "Stable Diffusion", stable_diffusion_commit_hash)
-    git_clone(stable_diffusion_xl_repo, repo_dir('generative-models'), "Stable Diffusion XL", stable_diffusion_xl_commit_hash)
-    git_clone(k_diffusion_repo, repo_dir('k-diffusion'), "K-diffusion", k_diffusion_commit_hash)
-    git_clone(codeformer_repo, repo_dir('CodeFormer'), "CodeFormer", codeformer_commit_hash)
-    git_clone(blip_repo, repo_dir('BLIP'), "BLIP", blip_commit_hash)
+    git_clone(
+        stable_diffusion_repo,
+        repo_dir("stable-diffusion-stability-ai"),
+        "Stable Diffusion",
+        stable_diffusion_commit_hash,
+    )
+    git_clone(
+        stable_diffusion_xl_repo,
+        repo_dir("generative-models"),
+        "Stable Diffusion XL",
+        stable_diffusion_xl_commit_hash,
+    )
+    git_clone(
+        k_diffusion_repo,
+        repo_dir("k-diffusion"),
+        "K-diffusion",
+        k_diffusion_commit_hash,
+    )
+    git_clone(
+        codeformer_repo, repo_dir("CodeFormer"), "CodeFormer", codeformer_commit_hash
+    )
+    git_clone(blip_repo, repo_dir("BLIP"), "BLIP", blip_commit_hash)
 
     startup_timer.record("clone repositores")
 
     if not is_installed("lpips"):
-        run_pip(f"install -r \"{os.path.join(repo_dir('CodeFormer'), 'requirements.txt')}\"", "requirements for CodeFormer")
+        run_pip(
+            f"install -r \"{os.path.join(repo_dir('CodeFormer'), 'requirements.txt')}\"",
+            "requirements for CodeFormer",
+        )
         startup_timer.record("install CodeFormer requirements")
 
     if not os.path.isfile(requirements_file):
         requirements_file = os.path.join(script_path, requirements_file)
 
     if not requirements_met(requirements_file):
-        run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        run_pip(f'install -r "{requirements_file}"', "requirements")
         startup_timer.record("install requirements")
 
     if args.onnx:
         try:
             import onnxruntime
-            attr_check = onnxruntime.SessionOptions
+
+            attr_check = onnxruntime.SessionOptions  # noqa: F841
         except AttributeError:
-            print("Failed to load SessionOptions. Reinstall onnxruntime & onnxruntime for GPU.")
+            print(
+                "Failed to load SessionOptions. Reinstall onnxruntime & onnxruntime for GPU."
+            )
             run_pip_uninstall("onnxruntime", "onnxruntime")
             if args.backend == "directml":
                 run_pip_uninstall("onnxruntime-directml", "onnxruntime-directml")
@@ -431,14 +621,20 @@ def prepare_environment():
         run_pip("install --no-deps onnxruntime", "onnxruntime")
         if "onnx" not in args.use_cpu:
             if args.backend == "directml":
-                run_pip("install --no-deps onnxruntime-directml", "onnxruntime-directml")
+                run_pip(
+                    "install --no-deps onnxruntime-directml --upgrade",
+                    "onnxruntime-directml",
+                )
             else:
-                run_pip("install --no-deps onnxruntime-gpu", "onnxruntime-gpu")
+                run_pip(
+                    "install --no-deps onnxruntime-gpu --upgrade", "onnxruntime-gpu"
+                )
 
-        if args.backend != 'directml':
-            print(f"Olive optimization requires DirectML as a backend, but you have: '{args.backend}'. Try again with '--backend directml'.")
+        if args.backend != "directml":
+            print(
+                f"Olive optimization requires DirectML as a backend, but you have: '{args.backend}'. Try again with '--backend directml'."
+            )
             exit(0)
-        print("WARNING! Because Olive optimization does not support torch 2.0, some packages will be downgraded and it can occur version mismatches between packages. (Strongly recommend to create another virtual environment to run Olive)")
         if not is_installed("olive-ai"):
             run_pip("install olive-ai[directml]", "Olive")
 
@@ -458,7 +654,6 @@ def prepare_environment():
         exit(0)
 
 
-
 def configure_for_tests():
     if "--api" not in sys.argv:
         sys.argv.append("--api")
@@ -468,13 +663,16 @@ def configure_for_tests():
     if "--disable-nan-check" not in sys.argv:
         sys.argv.append("--disable-nan-check")
 
-    os.environ['COMMANDLINE_ARGS'] = ""
+    os.environ["COMMANDLINE_ARGS"] = ""
 
 
 def start():
-    print(f"Launching {'API server' if '--nowebui' in sys.argv else 'Web UI'} with arguments: {' '.join(sys.argv[1:])}")
+    print(
+        f"Launching {'API server' if '--nowebui' in sys.argv else 'Web UI'} with arguments: {' '.join(sys.argv[1:])}"
+    )
     import webui
-    if '--nowebui' in sys.argv:
+
+    if "--nowebui" in sys.argv:
         webui.api_only()
     else:
         webui.webui()

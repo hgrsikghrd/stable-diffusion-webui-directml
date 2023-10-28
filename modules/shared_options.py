@@ -197,8 +197,12 @@ options_templates.update(options_section(('sdxl', "Stable Diffusion XL"), {
 options_templates.update(options_section(('onnx', "ONNX Runtime"), {
     "enable_mem_pattern": OptionInfo(True, "Enable the memory pattern optimization."),
     "enable_mem_reuse": OptionInfo(True, "Enable the memory reuse optimization."),
-    "reload_model_before_each_generation": OptionInfo(False, "Reload model before each generation."),
+    "collect_garbage_for_each_generation": OptionInfo(False, "Collect garbage for each generation."),
     "offload_state_dict": OptionInfo(False, "Offload state dict."),
+
+    "onnx_olive": OptionHTML("<h2>Olive</h2>"),
+    "use_just_in_time_optimization": OptionInfo(False, "Use Just-in-Time optimization. (experimental)"),
+    "cache_optimized_model": OptionInfo(False, "Cache optimized model. (unchecking this will remove existing cached models)"),
 }))
 
 options_templates.update(options_section(('optimizations', "Optimizations"), {
